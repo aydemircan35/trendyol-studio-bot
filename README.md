@@ -55,9 +55,31 @@ Ardından `.env` dosyasını açıp anahtarlarınızı girin:
 - **`TELEGRAM_BOT_TOKEN`**: Telegram'da [@BotFather](https://t.me/BotFather) üzerinden `/newbot` diyerek alabilirsiniz.
 - **`GEMINI_API_KEY`**: [Google AI Studio](https://aistudio.google.com/app/apikey) üzerinden ücretsiz edinebilirsiniz.
 
-### 4. Botu Başlatın
+### 4. Botu Başlatın (Yerel)
 ```bash
 python bot.py
+```
+
+---
+
+## 🐳 Docker & Sunucu Kurulumu (Oracle Cloud / VPS)
+
+Oracle Cloud Always Free veya herhangi bir Linux sunucuda tek komutla 7/24 çalıştırmak için:
+
+```bash
+# 1. Repoyu klonlayın
+git clone https://github.com/kullanici-adiniz/trendyol-studio-bot.git
+cd trendyol-studio-bot
+
+# 2. .env dosyasını oluşturun
+cp .env.example .env
+nano .env  # Token ve API Key'inizi girin
+
+# 3. Docker ile arka planda başlatın
+docker compose up -d --build
+
+# Logları canlı izlemek için:
+docker compose logs -f
 ```
 
 ---

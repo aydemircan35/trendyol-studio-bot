@@ -13,9 +13,21 @@ from PIL import Image, ImageFilter, ImageOps
 import rembg
 
 
+# Hızlı ve hafif e-ticaret modeli: u2net (~160MB)
+# İlk çalıştırmada bir kere hafızaya alınır, sonraki tüm fotoğraflar anında işlenir
+_session = None
+
+def get_session():
+    global _session
+    if _session is None:
+        _session = rembg.new_session("u2net")
+    return _session
+
+
 def remove_background(input_image_bytes: bytes) -> Image.Image:
-    """Görselin arka planını rembg kullanarak temizler ve RGBA döndürür."""
-    output_bytes = rembg.remove(input_image_bytes)
+    """Görselin arka planını rembg u2net kullanarak hızlıca temizler."""
+    session = get_session()
+    output_bytes = rembg.remove(input_image_bytes, session=session)
     return Image.open(BytesIO(output_bytes)).convert("RGBA")
 
 

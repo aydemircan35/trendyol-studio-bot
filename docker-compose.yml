@@ -1,0 +1,15 @@
+services:
+  trendyol-bot:
+    build: .
+    container_name: trendyol_studio_bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    # Model önbelleğini saklamak için volume (yeniden başlatmada tekrar indirmesin)
+    volumes:
+      - rembg_cache:/root/.u2net
+      - rembg_cache2:/root/.rembg
+
+volumes:
+  rembg_cache:
+  rembg_cache2:

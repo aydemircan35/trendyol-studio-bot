@@ -4,8 +4,17 @@ Trendyol AI Stüdyo & SEO Telegram Botu.
 """
 
 import os
+import sys
 import io
 import logging
+
+# Windows konsolunda UTF-8 / Emoji desteğini garantiye al
+if sys.stdout.encoding != 'utf-8':
+    try:
+        sys.stdout.reconfigure(encoding='utf-8')
+        sys.stderr.reconfigure(encoding='utf-8')
+    except Exception:
+        pass
 from dotenv import load_dotenv
 from telegram import Update
 from telegram.ext import (
@@ -125,16 +134,23 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     if not TELEGRAM_TOKEN or TELEGRAM_TOKEN == "your_telegram_bot_token_here":
-        print("HATA: TELEGRAM_BOT_TOKEN ayarlanmamış! Lütfen .env dosyasını doldurun.")
+        print("HATA: TELEGRAM_BOT_TOKEN ayarlanmamış! Lütfen .env dosyasını doldurun.", flush=True)
         return
 
-    print("🤖 Trendyol AI Studio Bot başlatılıyor...")
+    print("🤖 Trendyol AI Studio Bot başlatılıyor...", flush=True)
+    
+    # Modeli önceden yükle (fotoğraf gelince anında işlensin)
+    print("⏳ Yapay zeka görsel modeli (u2net) yükleniyor...", flush=True)
+    from image_processor import get_session
+    get_session()
+    print("✅ Görsel modeli hazır!", flush=True)
+
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
 
-    print("✅ Bot hazır ve dinliyor!")
+    print("✅ Bot hazır ve dinliyor! Telegram üzerinden test edebilirsiniz.", flush=True)
     app.run_polling()
 
 
