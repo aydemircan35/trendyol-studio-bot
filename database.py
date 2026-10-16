@@ -21,11 +21,25 @@ def init_db():
         user_id INTEGER PRIMARY KEY,
         first_name TEXT,
         username TEXT,
+        role TEXT DEFAULT 'Satıcı',
+        status TEXT DEFAULT 'Aktif',
+        store_name TEXT DEFAULT '',
         total_photos INTEGER DEFAULT 0,
         total_questions INTEGER DEFAULT 0,
         last_active TIMESTAMP
     )
     """)
+    
+    # Mevcut veritabanı varsa yeni sütunları güvenle ekle
+    for col_def in [
+        ("role", "TEXT DEFAULT 'Satıcı'"),
+        ("status", "TEXT DEFAULT 'Aktif'"),
+        ("store_name", "TEXT DEFAULT ''")
+    ]:
+        try:
+            cursor.execute(f"ALTER TABLE users ADD COLUMN {col_def[0]} {col_def[1]}")
+        except Exception:
+            pass
     
     # 2. İşlenen Ürünler & Fotoğraflar Tablosu
     cursor.execute("""
@@ -71,9 +85,46 @@ def log_user_action(user_id: int, first_name: str, username: str, action: str = 
     else:
         photos = 1 if action == "photo" else 0
         questions = 1 if action == "question" else 0
-        cursor.execute("INSERT INTO users (user_id, first_name, username, total_photos, total_questions, last_active) VALUES (?, ?, ?, ?, ?, ?)",
+        cursor.execute("INSERT INTO users (user_id, first_name, username, role, status, store_name, total_photos, total_questions, last_active) VALUES (?, ?, ?, 'Satıcı', 'Aktif', '', ?, ?, ?)",
                        (user_id, first_name, username, photos, questions, now))
         
+    conn.commit()
+    conn.close()
+
+
+def add_or_update_user(user_id: int, first_name: str, username: str, role: str = "Satıcı", status: str = "Aktif", store_name: str = ""):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    now = datetime.datetime.now()
+    clean_username = username.lstrip("@").strip()
+    
+    cursor.execute("SELECT user_id FROM users WHERE user_id = ?", (user_id,))
+    if cursor.fetchone():
+        cursor.execute("""
+        UPDATE users SET first_name = ?, username = ?, role = ?, status = ?, store_name = ?, last_active = ?
+        WHERE user_id = ?
+        """, (first_name, clean_username, role, status, store_name, now, user_id))
+    else:
+        cursor.execute("""
+        INSERT INTO users (user_id, first_name, username, role, status, store_name, total_photos, total_questions, last_active)
+        VALUES (?, ?, ?, ?, ?, ?, 0, 0, ?)
+        """, (user_id, first_name, clean_username, role, status, store_name, now))
+    conn.commit()
+    conn.close()
+
+
+def delete_user(user_id: int):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM users WHERE user_id = ?", (user_id,))
+    conn.commit()
+    conn.close()
+
+
+def set_user_status(user_id: int, status: str):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("UPDATE users SET status = ? WHERE user_id = ?", (status, user_id))
     conn.commit()
     conn.close()
 
@@ -107,7 +158,7 @@ def get_stats():
     cursor.execute("SELECT COUNT(*) FROM product_logs")
     total_products = cursor.fetchone()[0]
     
-    cursor.execute("SELECT user_id, first_name, username, total_photos, last_active FROM users ORDER BY last_active DESC LIMIT 20")
+    cursor.execute("SELECT user_id, first_name, username, role, status, store_name, total_photos, last_active FROM users ORDER BY last_active DESC LIMIT 50")
     recent_users = cursor.fetchall()
     
     cursor.execute("SELECT id, user_name, product_title, has_lifestyle_render, created_at FROM product_logs ORDER BY created_at DESC LIMIT 20")

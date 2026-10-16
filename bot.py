@@ -94,8 +94,8 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         photo_bytes = await file_obj.download_as_bytearray(read_timeout=120)
         raw_bytes = bytes(photo_bytes)
         
-        # 1. Stüdyo Görseli (1200x1800 px)
-        studio_img = await asyncio.to_thread(process_product_image, raw_bytes)
+        # 1. Stüdyo Görseli (1200x1800 px) & Ayrıştırılmış Ürün
+        studio_img, product_cropped = await asyncio.to_thread(process_product_image, raw_bytes)
         img_buffer = io.BytesIO()
         studio_img.save(img_buffer, format="JPEG", quality=95)
         img_buffer.seek(0)
@@ -108,9 +108,9 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # İlk satırdan ürün başlığını al
         product_short_desc = listing_text.split("\n")[0].replace("*", "").replace("#", "")
         
-        # 3. Gerçek Masayı Odaya Yerleştirme (Lifestyle Staging)
+        # 3. Gerçek Masayı Odaya Yerleştirme (Lifestyle Staging - Önceden ayrıştırılmış ürün ile anında)
         await status.edit_text("⏳ 3/3 Masanız fotogerçekçi yaşam alanına / yemek odasına yerleştiriliyor...")
-        lifestyle_bytes = await asyncio.to_thread(generate_lifestyle_scene, raw_bytes)
+        lifestyle_bytes = await asyncio.to_thread(generate_lifestyle_scene, product_cropped)
         
         # Ürünü admin paneli veritabanına kaydet
         database.record_product(user.id, user.first_name, product_short_desc, bool(lifestyle_bytes))

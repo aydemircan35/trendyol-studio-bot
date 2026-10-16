@@ -19,12 +19,16 @@ _session = None
 def get_session():
     global _session
     if _session is None:
-        # GPU arayıp donmaması için doğrudan CPUExecutionProvider kilitlenir
-        _session = rembg.new_session("u2net", providers=["CPUExecutionProvider"])
+        try:
+            # En son teknoloji birefnet-general modeli (mobilya, ayaklar ve camı kusursuz ayıklar)
+            _session = rembg.new_session("birefnet-general", providers=["CPUExecutionProvider"])
+        except Exception as e:
+            logger.warning(f"birefnet yüklenemedi, u2net'e dönülüyor: {e}")
+            _session = rembg.new_session("u2net", providers=["CPUExecutionProvider"])
     return _session
 
 
-def extract_product(input_image_bytes: bytes) -> tuple[Image.Image, Image.Image]:
+def extract_product(input_image_bytes: bytes) -> Image.Image:
     """
     Ham fotoğraftan ürünü (masayı) ve maskesini piksel piksel ayıklar.
     Dükkan/atölye arka planı silinir, sadece masanın kendisi kalır.
@@ -34,7 +38,7 @@ def extract_product(input_image_bytes: bytes) -> tuple[Image.Image, Image.Image]
     if orig_img.mode != "RGB":
         orig_img = orig_img.convert("RGB")
     
-    max_dimension = 1400
+    max_dimension = 1000
     if max(orig_img.size) > max_dimension:
         orig_img.thumbnail((max_dimension, max_dimension), Image.Resampling.LANCZOS)
     
@@ -69,16 +73,16 @@ def create_realistic_shadow(product_cropped: Image.Image) -> Image.Image:
     shadow.putalpha(alpha)
     
     # Yer gölgesi perspektifi: dikeyde basıklaştır
-    shadow_flat = shadow.resize((w, max(10, int(h * 0.20))), Image.Resampling.LANCZOS)
+    shadow_flat = shadow.resize((w, max(10, int(h * 0.18))), Image.Resampling.LANCZOS)
     
     canvas = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     # Masanın alt bacak tabanına hizala
-    canvas.paste(shadow_flat, (0, int(h * 0.82)), shadow_flat)
-    canvas = canvas.filter(ImageFilter.GaussianBlur(18))
+    canvas.paste(shadow_flat, (0, int(h * 0.85)), shadow_flat)
+    canvas = canvas.filter(ImageFilter.GaussianBlur(16))
     
     # Opaklık ayarla
     r, g, b, a = canvas.split()
-    a = a.point(lambda p: int(p * 0.55))
+    a = a.point(lambda p: int(p * 0.50))
     canvas.putalpha(a)
     return canvas
 
@@ -88,8 +92,6 @@ def compose_product_into_room(product_cropped: Image.Image) -> Image.Image:
     Satıcının gerçek masasını, fotogerçekçi bir İskandinav yemek odası/salon ortamına
     kusursuz ışık, zemin ve perspektif uyumu ile entegre eder.
     """
-    # 1. Hedef oda arka planı (Geniş pencereli, sıcak ahşap parkeli, modern aydınlatmalı gerçekçi oda)
-    # FLUX üzerinden önbellekli veya hazır estetik mimari oda zemini
     room_url = (
         "https://image.pollinations.ai/prompt/"
         "empty%20modern%20bright%20Scandinavian%20dining%20room%20interior%2C%20floor%20to%20ceiling%20windows%2C%20warm%20morning%20sunlight%2C%20light%20oak%20wood%20parquet%20floor%2C%20minimalist%20beige%20wall%2C%20unfurnished%20center%20space%20for%20furniture%2C%208k%20architectural%20photography%2C%20photorealistic"
@@ -108,20 +110,21 @@ def compose_product_into_room(product_cropped: Image.Image) -> Image.Image:
 
     bg_w, bg_h = room_bg.size
 
-    # 2. Masayı oda boyutuna göre orantıla (odanın %65 genişliğini kaplayacak şekilde)
-    target_prod_w = int(bg_w * 0.68)
+    # 2. Masayı oda perspektifine orantıla (Genişlik en fazla %65, yükseklik en fazla %45)
     pw, ph = product_cropped.size
-    ratio = target_prod_w / float(pw)
-    new_h = int(ph * ratio)
+    max_pw = int(bg_w * 0.65)
+    max_ph = int(bg_h * 0.45)
+    scale = min(max_pw / pw, max_ph / ph)
+    new_w = max(10, int(pw * scale))
+    new_h = max(10, int(ph * scale))
     
-    scaled_product = product_cropped.resize((target_prod_w, new_h), Image.Resampling.LANCZOS)
+    scaled_product = product_cropped.resize((new_w, new_h), Image.Resampling.LANCZOS)
     
     # 3. Masanın gerçekçi gölgesini üret
     shadow_layer = create_realistic_shadow(scaled_product)
     
-    # 4. Masayı odanın zeminine / odak noktasına konumlandır
-    pos_x = (bg_w - target_prod_w) // 2
-    # Zemine doğal oturtma (alt kısımdan %12 boşluk)
+    # 4. Masayı odanın zeminine / odak noktasına konumlandır (zeminden %10 pay)
+    pos_x = (bg_w - new_w) // 2
     pos_y = bg_h - new_h - int(bg_h * 0.10)
     
     # Odaya önce gölgeyi yapıştır
@@ -136,34 +139,40 @@ def process_product_image(
     input_image_bytes: bytes,
     target_width: int = 1200,
     target_height: int = 1800
-) -> Image.Image:
-    """Saf beyaz fonlu Trendyol 1200x1800 vitrin görseli (Masanın kendisi)."""
+) -> tuple[Image.Image, Image.Image]:
+    """Saf beyaz fonlu Trendyol 1200x1800 vitrin görseli ve ayrıştırılmış ürünü döner."""
     product_cropped = extract_product(input_image_bytes)
     pw, ph = product_cropped.size
 
-    max_w = int(target_width * 0.80)
-    max_h = int(target_height * 0.80)
+    # Ürünü tuvalin %80'ini dolduracak şekilde orantılı büyüt/küçült
+    max_w = int(target_width * 0.82)
+    max_h = int(target_height * 0.82)
+    scale = min(max_w / pw, max_h / ph)
+    new_w = max(10, int(pw * scale))
+    new_h = max(10, int(ph * scale))
     
-    product_cropped.thumbnail((max_w, max_h), Image.Resampling.LANCZOS)
-    pw, ph = product_cropped.size
+    scaled_product = product_cropped.resize((new_w, new_h), Image.Resampling.LANCZOS)
 
     background = Image.new("RGBA", (target_width, target_height), (255, 255, 255, 255))
-    x = (target_width - pw) // 2
-    y = (target_height - ph) // 2 + int(target_height * 0.03)
+    x = (target_width - new_w) // 2
+    y = (target_height - new_h) // 2 + int(target_height * 0.03)
 
-    shadow = create_realistic_shadow(product_cropped)
+    shadow = create_realistic_shadow(scaled_product)
     background.paste(shadow, (x, y + 5), shadow)
-    background.paste(product_cropped, (x, y), product_cropped)
-    return background.convert("RGB")
+    background.paste(scaled_product, (x, y), scaled_product)
+    return background.convert("RGB"), product_cropped
 
 
-def generate_lifestyle_scene(input_image_bytes: bytes) -> bytes:
+def generate_lifestyle_scene(input_data) -> bytes:
     """
-    Satıcının attığı masanın birebir kendisini alıp,
-    örnek fotoğraflardaki gibi fotogerçekçi bir odaya yerleştirir.
+    Satıcının attığı masanın birebir kendisini alıp fotogerçekçi odaya yerleştirir.
+    input_data bytes veya önceden ayrıştırılmış Image.Image olabilir.
     """
     try:
-        product_cropped = extract_product(input_image_bytes)
+        if isinstance(input_data, Image.Image):
+            product_cropped = input_data
+        else:
+            product_cropped = extract_product(input_data)
         composed_room = compose_product_into_room(product_cropped)
         
         buf = BytesIO()
