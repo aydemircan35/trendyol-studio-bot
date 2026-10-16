@@ -58,7 +58,7 @@ def get_trendyol_client():
 
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """İlk girenlere hoşgeldiniz metni, /giris ve /uyeol butonları."""
+    """İlk girenlere hoşgeldiniz metni, deep link ile hesap eşleme ve /giris / /uyeol butonları."""
     user = update.effective_user
     user_name = user.first_name or "Değerli Satıcı"
     is_live = bool(get_trendyol_client())
@@ -66,24 +66,50 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     database.log_user_action(user.id, user.first_name, user.username, action="start")
 
+    # 1. WEB'DEN OTOMATİK AKTARMA / EŞLEŞTİRME KONTROLÜ (Deep Link: /start web_123456)
+    if context.args and context.args[0].startswith("web_"):
+        try:
+            web_id = int(context.args[0].replace("web_", ""))
+            linked = database.link_telegram_to_web_user(web_id, user.id, user.first_name, user.username)
+            if linked:
+                linked_text = (
+                    f"🎉 **Tebrikler {user_name}! Web Hesabınız Başarıyla Telegram'a Bağlandı.**\n\n"
+                    f"🏪 **Mağaza:** `{linked['store_name']}`\n"
+                    f"👤 **Kullanıcı Adınız:** `{linked['username']}`\n"
+                    f"🔑 **Giriş Şifreniz:** `{linked['password']}`\n"
+                    f"🆔 **Telegram ID:** `{user.id}`\n\n"
+                    "✅ **Hesaplarınız Otomatik Birleştirildi!**\n"
+                    "Artık bu sohbete göndereceğiniz tüm fotoğraflar:\n"
+                    "• Otomatik 1200x1800 saf beyaz fona alınır.\n"
+                    "• İkili Yapay Zeka ile lüks mimari yaşam alanına giydirilir.\n"
+                    "• Web kontrol merkezinizdeki mağaza arşivinize anında kaydedilir!\n\n"
+                    "📸 **Hemen Başlayın:** Bir mobilya veya ürün fotoğrafı gönderin!"
+                )
+                await update.message.reply_text(
+                    linked_text,
+                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🌐 Web Kontrol Paneline Git", url=DASHBOARD_URL)]]),
+                    parse_mode="Markdown"
+                )
+                return
+        except Exception as e:
+            logger.warning(f"Web hesap eşleştirme hatası: {e}")
+
+    # 2. STANDART HOŞ GELDİNİZ VE DEĞER ÖNERİSİ
     text = (
         f"👋 **Hoş Geldiniz {user_name}!**\n\n"
         "🏢 **Trendyol AI Mağaza Yöneticisi & Akıllı Stüdyo Portalı**\n"
         f"Durum: {mode_text}\n\n"
-        "✨ **Sisteme Hoş Geldiniz! Nasıl Başlayabilirsiniz?**\n"
-        "🔑 **/giris** — Kullanıcı adı ve şifrenizi öğrenip kontrol paneline girin.\n"
-        "📝 **/uyeol** — Otomatik kullanıcı adı ve şifreyle anında üye olun.\n\n"
-        "📸 **Yapay Zeka Stüdyosu Nasıl Çalışır?**\n"
-        "Herhangi bir amatör ürün fotoğrafı atın. Sistemdeki **İkili Yapay Zeka (Dual-Agent)**:\n"
-        "1️⃣ **İç Mimar Ajanı (Vision):** Mobilyanızın dokusunu, rengini ve malzemesini inceleyip en lüks mimari odayı tasarlar.\n"
-        "2️⃣ **Stüdyo Motoru:** Ürünü 1200x1800 saf beyaz fona ve özel tasarlanan fotogerçekçi yaşam alanına yerleştirir.\n"
-        "3️⃣ **SEO Ajanı:** Trendyol algoritmasına tam uyumlu başlık, nitelikler ve vitrin ilanınızı üretir.\n\n"
-        "👇 Başlamak için aşağıdaki seçeneklerden birini tıklayabilirsiniz:"
+        "🤔 **Neden Bir Satıcı Hesabına İhtiyacınız Var?**\n"
+        "📁 **1. Kalıcı Görsel Kütüphanesi:** Botun ürettiği 1200x1800 beyaz fon ve mimari lifestyle çekimler kaybolmaz, web panelinizde saklanır ve bilgisayarınızdan toplu indirilebilir.\n"
+        "🚀 **2. Trendyol'a Tek Tıkla Yükleme:** API bilgilerinizi hesabınıza bağlayarak ilanları doğrudan mağazanıza yükleyebilirsiniz.\n"
+        "💬 **3. 7/24 Müşteri Temsilcisi:** Trendyol'daki müşteri sorularınızı yapay zeka mağaza kurallarına göre profesyonelce yanıtlar.\n"
+        "🎨 **4. Marka Mekan Stili:** Mobilyalarınız için özel iç mimari tarzını (İskandinav, Milano Loft vb.) webden sabitleyebilirsiniz.\n\n"
+        "✨ **Hemen Başlayın:**"
     )
 
     keyboard = [
         [
-            InlineKeyboardButton("📝 Tek Tıkla Üye Ol", callback_data="btn_uyeol"),
+            InlineKeyboardButton("📝 Tek Tıkla Üye Ol (Otomatik)", callback_data="btn_uyeol"),
             InlineKeyboardButton("🔑 Giriş Yap / Şifrem", callback_data="btn_giris")
         ],
         [InlineKeyboardButton("🌐 Web Kontrol Paneline Git", url=DASHBOARD_URL)],

@@ -256,14 +256,19 @@ def public_register_action(fname, sname, uname, passw):
         username=uname.strip() if uname and uname.strip() else None,
         password=passw.strip() if passw and passw.strip() else None
     )
-    log_message(f"🎉 Yeni satıcı portaldan kaydını açtı: {fname} (Kullanıcı: {res['username']}, Şifre: {res['password']})")
+    tg_deep_link = f"https://t.me/Trendyol_studio_mehmetbot?start=web_{res['user_id']}"
     
     return (
         f"🎉 **Tebrikler {fname}! Satıcı Hesabınız Başarıyla Açıldı.**\n\n"
         f"👤 **Kullanıcı Adınız:** `{res['username']}`\n"
         f"🔑 **Giriş Şifreniz:** `{res['password']}`\n"
         f"🏪 **Mağaza:** `{res['store_name']}`\n\n"
-        "👉 Şimdi yukarıdaki **'🔐 Sisteme Giriş'** sekmesine geçerek bu bilgilerinizle hemen giriş yapabilir veya Telegram'da **[@Trendyol_studio_mehmetbot](https://t.me/Trendyol_studio_mehmetbot)** botuna ürün fotoğraflarınızı gönderebilirsiniz!"
+        "━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        "### 📲 Hesabınızı Telegram'a Otomatik Aktarın:\n"
+        "Hesabınızı şifre girmeden doğrudan Telegram botunuza bağlamak için tıklayın:\n\n"
+        f"👉 **[🚀 HESABIMI TELEGRAM'A TEK TIKLA BAĞLA]({tg_deep_link})**\n\n"
+        "*(Tıkladığınızda Telegram açılır ve hesabınız saniyeler içinde otomatik senkronize olur.)*\n\n"
+        "🌐 Veya yukarıdaki **'🔐 Sisteme Giriş'** sekmesine geçerek bu bilgilerinizle kontrol merkezinize girebilirsiniz!"
     )
 
 
@@ -387,6 +392,13 @@ with gr.Blocks(title="Trendyol AI - Yönetici Kontrol Merkezi", theme=custom_the
                         auto_btn = gr.Button("🎲 Otomatik Kolay Belirle", variant="secondary")
                         reg_btn = gr.Button("✨ Satıcı Hesabımı Aç", variant="primary", size="lg")
                     reg_msg = gr.Markdown()
+                    with gr.Accordion("💡 Neden Bir Satıcı Hesabı Açmalısınız?", open=False):
+                        gr.Markdown("""
+                        * 📁 **1. Kalıcı Görsel Kütüphanesi:** Botun ürettiği 1200x1800 beyaz fon ve mimari lifestyle çekimler kaybolmaz, web panelinizde saklanır ve bilgisayarınızdan toplu indirilebilir.
+                        * 🚀 **2. Trendyol'a Tek Tıkla Yükleme:** API bilgilerinizi hesabınıza bağlayarak ilanları doğrudan mağazanıza yükleyebilirsiniz.
+                        * 💬 **3. 7/24 Müşteri Temsilcisi:** Trendyol'daki müşteri sorularınızı yapay zeka mağaza kurallarına göre profesyonelce yanıtlar.
+                        * 🎨 **4. Marka Mekan Stili:** Mobilyalarınız için özel iç mimari tarzını (İskandinav, Milano Loft vb.) webden sabitleyebilirsiniz.
+                        """)
 
     # ----------------------------------------------------
     # 2. ANA YÖNETİCİ KONTROL MERKEZİ (DASHBOARD)

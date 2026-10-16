@@ -285,6 +285,50 @@ def register_web_user(first_name: str, store_name: str, username: str = None, pa
     }
 
 
+def link_telegram_to_web_user(web_user_id: int, tg_user_id: int, tg_first_name: str, tg_username: str):
+    """
+    Web üzerinden açılan hesabı Telegram kullanıcısıyla kalıcı olarak eşleştirir.
+    """
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    now = datetime.datetime.now()
+    
+    cursor.execute("SELECT user_id, first_name, username, password, role, status, store_name FROM users WHERE user_id = ?", (web_user_id,))
+    web_row = cursor.fetchone()
+    
+    if not web_row:
+        conn.close()
+        return None
+        
+    cursor.execute("SELECT user_id FROM users WHERE user_id = ?", (tg_user_id,))
+    tg_row = cursor.fetchone()
+    
+    clean_u = (tg_username or web_row[2] or "").strip().lstrip("@").lower()
+    
+    if tg_row and tg_user_id != web_user_id:
+        cursor.execute("""
+        UPDATE users SET first_name = ?, username = ?, password = ?, store_name = ?, last_active = ?
+        WHERE user_id = ?
+        """, (tg_first_name or web_row[1], clean_u, web_row[3], web_row[6], now, tg_user_id))
+        cursor.execute("DELETE FROM users WHERE user_id = ?", (web_user_id,))
+    else:
+        cursor.execute("""
+        UPDATE users SET user_id = ?, first_name = ?, username = ?, last_active = ?
+        WHERE user_id = ?
+        """, (tg_user_id, tg_first_name or web_row[1], clean_u, now, web_user_id))
+        
+    conn.commit()
+    conn.close()
+    
+    return {
+        "user_id": tg_user_id,
+        "first_name": tg_first_name or web_row[1],
+        "username": clean_u,
+        "password": web_row[3],
+        "store_name": web_row[6]
+    }
+
+
 def verify_login(username_or_id: str, password_attempt: str):
     """
     Giriş bilgilerini kontrol eder:
