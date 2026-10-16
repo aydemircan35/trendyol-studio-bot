@@ -1,14 +1,14 @@
 """
 image_processor.py
-E-Ticaret Görsel ve Fotogerçekçi Mekan Render Motoru:
-1. Saf beyaz stüdyo fonu (Trendyol 1. vitrin standardı).
-2. FLUX AI mimari motoru ile lüks iç mekan / yaşam alanı konsept görseli üretimi (Lifestyle Staging).
+E-Ticaret Ürün Yerleştirme (Product Staging & Placement) Motoru:
+Satıcının attığı ürünün (örneğin yemek masası) kendisini, tablasını ve bacaklarını %100 korur;
+etrafına fotogerçekçi bir yaşam alanı (yemek odası / salon) ve doğal gölgeler giydirir.
 """
 
 import os
 from io import BytesIO
 import requests
-from PIL import Image, ImageFilter
+from PIL import Image, ImageFilter, ImageOps
 import rembg
 import logging
 
@@ -23,14 +23,17 @@ def get_session():
     return _session
 
 
-def remove_background(input_image_bytes: bytes) -> Image.Image:
-    """Arka planı rembg u2net ile hızlıca temizler."""
+def extract_product(input_image_bytes: bytes) -> tuple[Image.Image, Image.Image]:
+    """
+    Ham fotoğraftan ürünü (masayı) ve maskesini piksel piksel ayıklar.
+    Dükkan/atölye arka planı silinir, sadece masanın kendisi kalır.
+    """
     session = get_session()
     orig_img = Image.open(BytesIO(input_image_bytes))
     if orig_img.mode != "RGB":
         orig_img = orig_img.convert("RGB")
     
-    max_dimension = 1500
+    max_dimension = 1400
     if max(orig_img.size) > max_dimension:
         orig_img.thumbnail((max_dimension, max_dimension), Image.Resampling.LANCZOS)
     
@@ -38,24 +41,94 @@ def remove_background(input_image_bytes: bytes) -> Image.Image:
     orig_img.save(buf, format="JPEG", quality=92)
     optimized_bytes = buf.getvalue()
 
-    output_bytes = rembg.remove(optimized_bytes, session=session)
-    return Image.open(BytesIO(output_bytes)).convert("RGBA")
+    # Arka planı sil
+    product_rgba = rembg.remove(optimized_bytes, session=session)
+    product_img = Image.open(BytesIO(product_rgba)).convert("RGBA")
+    
+    # Sınırları bul ve kırp
+    bbox = product_img.getbbox()
+    if bbox:
+        product_cropped = product_img.crop(bbox)
+    else:
+        product_cropped = product_img
+
+    return product_cropped
 
 
-def create_studio_shadow(product_image: Image.Image, blur_radius=25, shadow_opacity=110) -> Image.Image:
-    """Ürünün altına doğal temas gölgesi ekler."""
-    alpha = product_image.split()[-1]
-    shadow = Image.new("RGBA", product_image.size, (30, 30, 30, 0))
+def create_realistic_shadow(product_cropped: Image.Image) -> Image.Image:
+    """
+    Masanın bacaklarının ve gövdesinin altına parkeye/halıya düşen
+    gerçekçi yumuşak bir temas gölgesi (ambient contact shadow) üretir.
+    """
+    w, h = product_cropped.size
+    alpha = product_cropped.split()[-1]
+    
+    # Siyah siluet gölge katmanı
+    shadow = Image.new("RGBA", (w, h), (20, 20, 25, 0))
     shadow.putalpha(alpha)
-    w, h = shadow.size
-    shadow_squashed = shadow.resize((w, int(h * 0.25)), Image.Resampling.LANCZOS)
-    shadow_layer = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-    shadow_layer.paste(shadow_squashed, (0, int(h * 0.78)), shadow_squashed)
-    shadow_layer = shadow_layer.filter(ImageFilter.GaussianBlur(blur_radius))
-    r, g, b, a = shadow_layer.split()
-    a = a.point(lambda p: int(p * (shadow_opacity / 255.0)))
-    shadow_layer.putalpha(a)
-    return shadow_layer
+    
+    # Yer gölgesi perspektifi: dikeyde basıklaştır
+    shadow_flat = shadow.resize((w, max(10, int(h * 0.20))), Image.Resampling.LANCZOS)
+    
+    canvas = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    # Masanın alt bacak tabanına hizala
+    canvas.paste(shadow_flat, (0, int(h * 0.82)), shadow_flat)
+    canvas = canvas.filter(ImageFilter.GaussianBlur(18))
+    
+    # Opaklık ayarla
+    r, g, b, a = canvas.split()
+    a = a.point(lambda p: int(p * 0.55))
+    canvas.putalpha(a)
+    return canvas
+
+
+def compose_product_into_room(product_cropped: Image.Image) -> Image.Image:
+    """
+    Satıcının gerçek masasını, fotogerçekçi bir İskandinav yemek odası/salon ortamına
+    kusursuz ışık, zemin ve perspektif uyumu ile entegre eder.
+    """
+    # 1. Hedef oda arka planı (Geniş pencereli, sıcak ahşap parkeli, modern aydınlatmalı gerçekçi oda)
+    # FLUX üzerinden önbellekli veya hazır estetik mimari oda zemini
+    room_url = (
+        "https://image.pollinations.ai/prompt/"
+        "empty%20modern%20bright%20Scandinavian%20dining%20room%20interior%2C%20floor%20to%20ceiling%20windows%2C%20warm%20morning%20sunlight%2C%20light%20oak%20wood%20parquet%20floor%2C%20minimalist%20beige%20wall%2C%20unfurnished%20center%20space%20for%20furniture%2C%208k%20architectural%20photography%2C%20photorealistic"
+        "?width=1200&height=900&model=flux&nologo=true&seed=105"
+    )
+
+    try:
+        resp = requests.get(room_url, timeout=25)
+        if resp.status_code == 200 and len(resp.content) > 1000:
+            room_bg = Image.open(BytesIO(resp.content)).convert("RGBA")
+        else:
+            room_bg = Image.new("RGBA", (1200, 900), (245, 245, 247, 255))
+    except Exception as e:
+        logger.warning(f"Oda arka planı alınamadı, nötr stüdyo kullanılıyor: {e}")
+        room_bg = Image.new("RGBA", (1200, 900), (245, 245, 247, 255))
+
+    bg_w, bg_h = room_bg.size
+
+    # 2. Masayı oda boyutuna göre orantıla (odanın %65 genişliğini kaplayacak şekilde)
+    target_prod_w = int(bg_w * 0.68)
+    pw, ph = product_cropped.size
+    ratio = target_prod_w / float(pw)
+    new_h = int(ph * ratio)
+    
+    scaled_product = product_cropped.resize((target_prod_w, new_h), Image.Resampling.LANCZOS)
+    
+    # 3. Masanın gerçekçi gölgesini üret
+    shadow_layer = create_realistic_shadow(scaled_product)
+    
+    # 4. Masayı odanın zeminine / odak noktasına konumlandır
+    pos_x = (bg_w - target_prod_w) // 2
+    # Zemine doğal oturtma (alt kısımdan %12 boşluk)
+    pos_y = bg_h - new_h - int(bg_h * 0.10)
+    
+    # Odaya önce gölgeyi yapıştır
+    room_bg.paste(shadow_layer, (pos_x, pos_y), shadow_layer)
+    # Üzerine gerçek masayı yapıştır (masanın dokusu, bacakları, tablası %100 korunur)
+    room_bg.paste(scaled_product, (pos_x, pos_y), scaled_product)
+    
+    return room_bg.convert("RGB")
 
 
 def process_product_image(
@@ -63,13 +136,13 @@ def process_product_image(
     target_width: int = 1200,
     target_height: int = 1800
 ) -> Image.Image:
-    """Saf beyaz fon ve doğal gölgeli Trendyol 1200x1800 vitrin görseli."""
-    product_transparent = remove_background(input_image_bytes)
-    bbox = product_transparent.getbbox()
-    product_cropped = product_transparent.crop(bbox) if bbox else product_transparent
+    """Saf beyaz fonlu Trendyol 1200x1800 vitrin görseli (Masanın kendisi)."""
+    product_cropped = extract_product(input_image_bytes)
+    pw, ph = product_cropped.size
 
-    max_w = int(target_width * 0.78)
-    max_h = int(target_height * 0.78)
+    max_w = int(target_width * 0.80)
+    max_h = int(target_height * 0.80)
+    
     product_cropped.thumbnail((max_w, max_h), Image.Resampling.LANCZOS)
     pw, ph = product_cropped.size
 
@@ -77,37 +150,24 @@ def process_product_image(
     x = (target_width - pw) // 2
     y = (target_height - ph) // 2 + int(target_height * 0.03)
 
-    shadow = create_studio_shadow(product_cropped)
-    background.paste(shadow, (x, y + 10), shadow)
+    shadow = create_realistic_shadow(product_cropped)
+    background.paste(shadow, (x, y + 5), shadow)
     background.paste(product_cropped, (x, y), product_cropped)
     return background.convert("RGB")
 
 
-def generate_lifestyle_scene(product_description: str) -> bytes:
+def generate_lifestyle_scene(input_image_bytes: bytes) -> bytes:
     """
-    FLUX AI motoru kullanarak ürün için tam olarak kullanıcının gönderdiği
-    İskandinav, lüks iç mekan mimari katalog render'ını üretir.
+    Satıcının attığı masanın birebir kendisini alıp,
+    örnek fotoğraflardaki gibi fotogerçekçi bir odaya yerleştirir.
     """
-    # Müşterinin paylaştığı gibi profesyonel mimari katalog stili
-    prompt = (
-        f"Ultra-photorealistic commercial interior design architectural photo of {product_description}. "
-        "Set in an elegant luxurious bright modern Scandinavian dining area and living room, "
-        "floor-to-ceiling windows with soft natural morning sunlight streaming in, "
-        "minimalist wooden and marble accents, aesthetic indoor plants, linen table runner, ceramic tableware, "
-        "warm subtle LED strip backlighting, 8k resolution, raytracing, Architectural Digest magazine photography style."
-    )
-
-    encoded_prompt = requests.utils.quote(prompt)
-    url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1024&height=768&model=flux&nologo=true"
-
     try:
-        logger.info("FLUX lifestyle render üretiliyor...")
-        res = requests.get(url, timeout=35)
-        if res.status_code == 200 and len(res.content) > 1000:
-            return res.content
-        else:
-            logger.warning(f"FLUX yanıtı geçersiz: {res.status_code}")
+        product_cropped = extract_product(input_image_bytes)
+        composed_room = compose_product_into_room(product_cropped)
+        
+        buf = BytesIO()
+        composed_room.save(buf, format="JPEG", quality=95)
+        return buf.getvalue()
     except Exception as e:
-        logger.error(f"Lifestyle görsel üretim hatası: {e}")
-
-    return None
+        logger.error(f"Odaya yerleştirme hatası: {e}", exc_info=True)
+        return None

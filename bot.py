@@ -103,9 +103,9 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # İlk satırdan ürün başlığını al
         product_short_desc = listing_text.split("\n")[0].replace("*", "").replace("#", "")
         
-        # 3. Fotogerçekçi Mekan / Katalog Render'ı (Lifestyle Staging)
-        await status.edit_text("⏳ 3/3 Lüks iç mekan / yaşam alanı konsept görseli üretiliyor...")
-        lifestyle_bytes = await asyncio.to_thread(generate_lifestyle_scene, product_short_desc)
+        # 3. Gerçek Masayı Odaya Yerleştirme (Lifestyle Staging)
+        await status.edit_text("⏳ 3/3 Masanız fotogerçekçi yaşam alanına / yemek odasına yerleştiriliyor...")
+        lifestyle_bytes = await asyncio.to_thread(generate_lifestyle_scene, raw_bytes)
         
         await status.delete()
         
