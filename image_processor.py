@@ -2,12 +2,11 @@
 image_processor.py
 E-Ticaret Görsel ve Fotogerçekçi Mekan Render Motoru:
 1. Saf beyaz stüdyo fonu (Trendyol 1. vitrin standardı).
-2. OpenRouter (FLUX.1) ile lüks iç mekan / yaşam alanı konsept görseli üretimi (Lifestyle Staging).
+2. FLUX AI mimari motoru ile lüks iç mekan / yaşam alanı konsept görseli üretimi (Lifestyle Staging).
 """
 
 import os
 from io import BytesIO
-import base64
 import requests
 from PIL import Image, ImageFilter
 import rembg
@@ -86,57 +85,28 @@ def process_product_image(
 
 def generate_lifestyle_scene(product_description: str) -> bytes:
     """
-    OpenRouter FLUX.1 modeli kullanarak ürün için lüks iç mekan mimari render'ı üretir.
-    (İskandinav ferah aydınlatma, modern ahşap/mermer detaylar, Architectural Digest tarzı)
+    FLUX AI motoru kullanarak ürün için tam olarak kullanıcının gönderdiği
+    İskandinav, lüks iç mekan mimari katalog render'ını üretir.
     """
-    api_key = os.getenv("OPENROUTER_API_KEY")
-    if not api_key:
-        return None
-
-    # Müşterinin paylaştığı gibi lüks iç mimari katalog stili
+    # Müşterinin paylaştığı gibi profesyonel mimari katalog stili
     prompt = (
         f"Ultra-photorealistic commercial interior design architectural photo of {product_description}. "
-        "Set in an elegant luxurious bright modern Scandinavian dining and living room, "
-        "floor-to-ceiling windows with soft natural morning sunlight, "
-        "minimalist wooden and marble accents, aesthetic indoor plants, linen runner, ceramic tableware, "
+        "Set in an elegant luxurious bright modern Scandinavian dining area and living room, "
+        "floor-to-ceiling windows with soft natural morning sunlight streaming in, "
+        "minimalist wooden and marble accents, aesthetic indoor plants, linen table runner, ceramic tableware, "
         "warm subtle LED strip backlighting, 8k resolution, raytracing, Architectural Digest magazine photography style."
     )
 
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-        "HTTP-Referer": "https://trendyol-studio-bot.org",
-        "X-Title": "Trendyol Studio Bot"
-    }
-
-    # OpenRouter üzerinden FLUX.1 veya SDXL görsel üretimi
-    payload = {
-        "model": "black-forest-labs/flux-1-schnell",
-        "prompt": prompt,
-        "width": 1024,
-        "height": 768
-    }
+    encoded_prompt = requests.utils.quote(prompt)
+    url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1024&height=768&model=flux&nologo=true"
 
     try:
-        # OpenRouter images/generations endpoint
-        res = requests.post(
-            "https://openrouter.ai/api/v1/images/generations",
-            headers=headers,
-            json=payload,
-            timeout=40
-        )
-        if res.status_code == 200:
-            data = res.json()
-            # B64 veya URL döndürebilir
-            if "data" in data and len(data["data"]) > 0:
-                first_item = data["data"][0]
-                if "b64_json" in first_item:
-                    return base64.b64decode(first_item["b64_json"])
-                elif "url" in first_item:
-                    img_resp = requests.get(first_item["url"], timeout=20)
-                    return img_resp.content
+        logger.info("FLUX lifestyle render üretiliyor...")
+        res = requests.get(url, timeout=35)
+        if res.status_code == 200 and len(res.content) > 1000:
+            return res.content
         else:
-            logger.warning(f"Görsel üretim yanıtı: {res.status_code} - {res.text}")
+            logger.warning(f"FLUX yanıtı geçersiz: {res.status_code}")
     except Exception as e:
         logger.error(f"Lifestyle görsel üretim hatası: {e}")
 

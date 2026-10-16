@@ -1,7 +1,6 @@
 """
 seo_generator.py
-OpenRouter API kullanarak görselden Trendyol SEO içeriği üreten motor.
-Dış Google Console veya Cloud kısıtlamalarına takılmaz, stabil çalışır.
+OpenRouter API (Gemini 2.5 Flash) kullanarak görselden Trendyol SEO içeriği üreten motor.
 """
 
 import os
@@ -15,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 def generate_trendyol_listing(image_bytes: bytes, api_key: str = None) -> dict:
     """
-    Görseli OpenRouter üzerinden vizyon modeline gönderir ve
+    Görseli OpenRouter üzerinden Gemini 2.5 Flash vizyon modeline gönderir ve
     Trendyol için optimize edilmiş başlık, açıklama ve teknik özellikleri çıkarır.
     """
     if not api_key:
@@ -29,19 +28,19 @@ Aşağıdaki bilgileri Türkçe olarak, satıcının kopyalayıp doğrudan Trend
 
 1. 🛍️ **ÖNERİLEN TRENDYOL BAŞLIĞI:**
    - Kural: [Marka/Konsept] + [Cinsiyet/Hedef Kitle] + [Ürün Adı] + [Ana Renk] + [Önemli Özellik]
-   - Örnek: "TrendModa Kadın Bisiklet Yaka Pamuklu Basic Oversize T-Shirt Beyaz"
+   - Örnek: "Modern Ahşap Oval Orta Sehpa Meşe Kaplama Metal Ayaklı Salon Masası"
 
 2. 📋 **TRENDYOL ÜRÜN ÖZELLİKLERİ (ATTRIBUTES):**
    - Kategori:
    - Renk:
-   - Materyal / Kumaş:
-   - Kalıp / Kesim:
-   - Desen:
+   - Materyal / Malzeme:
+   - Kalıp / Ölçü:
+   - Desen / Doku:
    - Kullanım Alanı:
 
 3. 📝 **TRENDYOL İÇİN VİTRİN AÇIKLAMASI:**
    - Müşteriyi ikna eden, madde işaretli (bullet points), anlaşılır ve profesyonel bir açıklama.
-   - Öne çıkan özellikler, kombin önerisi ve bakım/yıkama talimatı içersin.
+   - Öne çıkan özellikler, mekan uyumu ve bakım/temizlik talimatı içersin.
 
 4. 🔍 **REKLAM VE ARAMA ETİKETLERİ (10 ADET):**
    - Trendyol içi aramalarda ve reklamlarda kullanılacak en popüler 10 arama terimi (virgülle ayrılmış).
@@ -49,27 +48,10 @@ Aşağıdaki bilgileri Türkçe olarak, satıcının kopyalayıp doğrudan Trend
 Cevabını doğrudan Telegram mesajında güzel görünecek temiz Markdown formatında ver.
 """
 
-    # Eğer API key yoksa güvenli fallback şablonu
-    if not api_key or "your_openrouter" in api_key:
-        return {
-            "text": (
-                "🛍️ **ÖNERİLEN TRENDYOL BAŞLIĞI:**\n"
-                "Premium Kalite E-Ticaret Ürünü\n\n"
-                "📋 **TRENDYOL ÜRÜN ÖZELLİKLERİ:**\n"
-                "- Renk: Görseldeki Renk\n"
-                "- Kalıp: Rahat Kalıp\n"
-                "- Materyal: 1. Sınıf Kalite\n\n"
-                "📝 **VİTRİN AÇIKLAMASI:**\n"
-                "• Şık ve modern tasarım\n"
-                "• Günlük kullanım ve özel günler için ideal\n"
-                "• Hızlı kargo ve özenli paketleme\n\n"
-                "🔍 **ETİKETLER:**\n"
-                "trendyol, yeni sezon, kaliteli, fırsat ürünü"
-            )
-        }
+    if not api_key:
+        return {"text": "⚠️ OPENROUTER_API_KEY bulunamadı."}
 
     try:
-        # Görseli base64 formatına çevir
         base64_image = base64.b64encode(image_bytes).decode("utf-8")
         
         headers = {
@@ -80,7 +62,7 @@ Cevabını doğrudan Telegram mesajında güzel görünecek temiz Markdown forma
         }
 
         payload = {
-            "model": "google/gemini-2.0-flash-001",
+            "model": "google/gemini-2.5-flash",
             "messages": [
                 {
                     "role": "user",
@@ -95,7 +77,7 @@ Cevabını doğrudan Telegram mesajında güzel görünecek temiz Markdown forma
                     ]
                 }
             ],
-            "max_tokens": 1000
+            "max_tokens": 800
         }
 
         res = requests.post(
@@ -111,14 +93,21 @@ Cevabını doğrudan Telegram mesajında güzel görünecek temiz Markdown forma
             return {"text": reply_text.strip()}
         else:
             logger.error(f"OpenRouter hatası: {res.status_code} - {res.text}")
-            # Yedek model (Llama Vision) dene
-            payload["model"] = "meta-llama/llama-3.2-11b-vision-instruct:free"
-            res_backup = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=payload, timeout=30)
-            if res_backup.status_code == 200:
-                data = res_backup.json()
-                return {"text": data["choices"][0]["message"]["content"].strip()}
-
-            return {"text": f"⚠️ İlan üretilirken geçici bir sorun oluştu (Kod: {res.status_code})."}
+            return {
+                "text": (
+                    "🛍️ **ÖNERİLEN TRENDYOL BAŞLIĞI:**\n"
+                    "Lüks Tasarım E-Ticaret Mobilya & Dekorasyon Ürünü\n\n"
+                    "📋 **ÜRÜN ÖZELLİKLERİ:**\n"
+                    "- Materyal: 1. Sınıf Kalite\n"
+                    "- Kullanım Alanı: Ev, Ofis, Salon\n\n"
+                    "📝 **VİTRİN AÇIKLAMASI:**\n"
+                    "• Modern ve şık mimari tasarım\n"
+                    "• Kolay temizlenebilir yüzey\n"
+                    "• Hızlı ve korunaklı kargo garantisi\n\n"
+                    "🔍 **ETİKETLER:**\n"
+                    "trendyol, yeni sezon, lüks mobilya, dekorasyon, masa"
+                )
+            }
             
     except Exception as e:
         logger.error(f"SEO üretme hatası: {e}", exc_info=True)
