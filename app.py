@@ -186,153 +186,311 @@ def save_ai_theme(theme_choice: str, custom_prompt: str):
 
 
 # ==========================================
-# PROFESYONEL GRADIO DASHBOARD ARAYÜZÜ
+# YÖNETİCİ KİMLİK DOĞRULAMA (AUTH)
 # ==========================================
+
+ADMIN_USER = os.getenv("ADMIN_USERNAME", "admin")
+ADMIN_PASS = os.getenv("ADMIN_PASSWORD", "trendyol123")
+
+
+def login_action(username, password):
+    if username == ADMIN_USER and password == ADMIN_PASS:
+        dash_data = get_dashboard_data()
+        log_message(f"🔐 Yönetici girişi başarılı: {username}")
+        return (
+            gr.update(visible=False), # login_box
+            gr.update(visible=True),  # dashboard_box
+            "",                       # login_error
+            dash_data[0], dash_data[1], dash_data[2], dash_data[3], dash_data[4], dash_data[5]
+        )
+    else:
+        log_message(f"⚠️ Hatalı giriş denemesi: {username}")
+        return (
+            gr.update(visible=True),
+            gr.update(visible=False),
+            "❌ **Hatalı kullanıcı adı veya şifre!** Lütfen bilgilerinizi kontrol ediniz.",
+            gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
+        )
+
+
+def logout_action():
+    log_message("🚪 Yönetici oturumu kapattı.")
+    return (
+        gr.update(visible=True),  # login_box
+        gr.update(visible=False), # dashboard_box
+        "", "", ""                # inputs reset
+    )
+
+
+# ==========================================
+# PROFESYONEL GRADIO DASHBOARD & ANİMASYONLU GİRİŞ
+# ==========================================
+
+custom_css = """
+/* Animasyonlar ve Cam Efekti (Glassmorphism) */
+.login-wrapper {
+    display: flex !important;
+    justify-content: center !important;
+    align-items: center !important;
+    padding: 60px 20px !important;
+    min-height: 75vh !important;
+    animation: fadeIn 0.8s ease-out forwards;
+}
+
+.login-card {
+    background: rgba(255, 255, 255, 0.92) !important;
+    backdrop-filter: blur(18px) !important;
+    -webkit-backdrop-filter: blur(18px) !important;
+    border: 1.5px solid rgba(255, 107, 0, 0.28) !important;
+    border-radius: 22px !important;
+    padding: 40px 35px !important;
+    box-shadow: 0 25px 50px -12px rgba(255, 107, 0, 0.22), 0 0 20px rgba(0, 0, 0, 0.05) !important;
+    max-width: 480px !important;
+    margin: 0 auto !important;
+    animation: slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.login-card:hover {
+    transform: translateY(-3px) !important;
+    box-shadow: 0 30px 60px -15px rgba(255, 107, 0, 0.3) !important;
+}
+
+.login-title {
+    background: linear-gradient(135deg, #FF6B00 0%, #FF8800 60%, #E65100 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    font-weight: 800;
+    font-size: 28px;
+    text-align: center;
+    letter-spacing: -0.5px;
+    margin-bottom: 6px;
+}
+
+.login-subtitle {
+    text-align: center;
+    color: #64748B;
+    font-size: 14px;
+    margin-bottom: 24px;
+}
+
+@keyframes slideUp {
+    from {
+        opacity: 0;
+        transform: translateY(35px) scale(0.95);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+.dashboard-animate {
+    animation: fadeIn 0.6s ease-out forwards;
+}
+"""
 
 custom_theme = gr.themes.Soft(
     primary_hue="orange",
     neutral_hue="slate"
 )
 
-with gr.Blocks(title="Trendyol AI - Yönetici Kontrol Merkezi", theme=custom_theme) as demo:
-    gr.Markdown("# 🏢 **Trendyol AI Mağaza Yöneticisi - Kurumsal Admin Paneli**")
-    gr.Markdown("Bu kontrol paneli üzerinden botu, kullanıcı hesaplarını, üretilen görselleri ve sistem ayarlarını 7/24 denetleyebilirsiniz.")
+with gr.Blocks(title="Trendyol AI - Yönetici Kontrol Merkezi", theme=custom_theme, css=custom_css) as demo:
     
-    # Üst İstatistik Kartları (KPIs)
-    with gr.Row():
-        metric_users = gr.Textbox(label="👥 Toplam Satıcı / Kullanıcı", value="0 Satıcı", interactive=False)
-        metric_products = gr.Textbox(label="📸 Üretilen Katalog Görseli", value="0 Görsel", interactive=False)
-        metric_status = gr.Textbox(label="⚡ Sistem Canlılık Durumu", value="🟢 ÇALIŞIYOR (7/24 Kesintisiz)", interactive=False)
-        with gr.Column():
-            refresh_all_btn = gr.Button("🔄 Paneli Canlı Yenile", variant="primary")
-            restart_svc_btn = gr.Button("⚡ Bot Servisini Yeniden Başlat")
-
-    action_alert = gr.Markdown()
-
-    gr.Markdown("---")
-
-    with gr.Tabs():
-        # 1. SEKME: KULLANICI & HESAP YÖNETİMİ
-        with gr.TabItem("👤 Kullanıcı & Hesap Yönetimi"):
-            gr.Markdown("### ➕ Yeni Satıcı / Ekip Hesabı Açma Arayüzü")
-            with gr.Group():
-                with gr.Row():
-                    in_uid = gr.Textbox(label="Telegram Kullanıcı ID (Bilinmiyorsa boş bırakılabilir)", placeholder="Örn: 987654321")
-                    in_uname = gr.Textbox(label="Telegram Kullanıcı Adı", placeholder="@satici_adi")
-                    in_fname = gr.Textbox(label="Ad Soyad", placeholder="Ahmet Yılmaz")
-                    in_store = gr.Textbox(label="Mağaza / Firma Adı", placeholder="Trend Ahşap Ltd.")
-                with gr.Row():
-                    in_role = gr.Dropdown(label="Yetki / Rol", choices=["Satıcı", "Yönetici (Admin)", "Tasarımcı"], value="Satıcı")
-                    in_status = gr.Dropdown(label="Hesap Durumu", choices=["Aktif", "Onay Bekliyor", "Pasif"], value="Aktif")
-                    create_acc_btn = gr.Button("💾 Kullanıcı / Hesap Aç", variant="primary")
-            
-            user_action_msg = gr.Markdown()
-
-            gr.Markdown("---")
-            gr.Markdown("### 📋 Kayıtlı Satıcılar & Hesap Yetki Listesi")
-            user_table = gr.Dataframe(
-                headers=["Kullanıcı ID", "Ad Soyad", "Telegram", "Mağaza Adı", "Rol", "Durum", "İşlenen Görsel", "Son İşlem"],
-                datatype=["str", "str", "str", "str", "str", "str", "str", "str"],
-                interactive=False
+    # ----------------------------------------------------
+    # 1. ANİMASYONLU GİRİŞ EKRANI (LOGIN SCREEN)
+    # ----------------------------------------------------
+    with gr.Column(visible=True, elem_classes=["login-wrapper"]) as login_box:
+        with gr.Column(elem_classes=["login-card"]):
+            gr.HTML("""
+            <div style="text-align: center; margin-bottom: 20px;">
+                <div style="font-size: 46px; margin-bottom: 10px; animation: pulse 2s infinite;">🔐</div>
+                <div class="login-title">Trendyol AI Studio</div>
+                <div class="login-subtitle">Kurumsal Yönetici Kontrol Merkezi Girişi</div>
+            </div>
+            """)
+            login_username = gr.Textbox(
+                label="Kullanıcı Adı",
+                placeholder="Yönetici adınızı girin (varsayılan: admin)",
+                value=""
             )
-            
-            with gr.Row():
-                target_uid_input = gr.Textbox(label="Seçili Kullanıcı ID (Yetki/Silme İşlemleri)", placeholder="İşlem yapılacak ID'yi yazınız")
-                btn_activate = gr.Button("✅ Yetkiyi Aç (Aktif)")
-                btn_deactivate = gr.Button("⏸️ Yetkiyi Kapat (Pasif)")
-                btn_del_user = gr.Button("🗑️ Kullanıcıyı Sil", variant="stop")
-
-        # 2. SEKME: İŞLENEN ÜRÜNLER & İLANLAR
-        with gr.TabItem("🖼️ İşlenen Ürünler & Katalog Galerisi"):
-            gr.Markdown("### 🛍️ Son Üretilen Trendyol İlanları ve Mekan Renderları")
-            product_table = gr.Dataframe(
-                headers=["Kayıt No", "Satıcı Adı", "Önerilen Trendyol Başlığı", "Lifestyle Render", "Tarih"],
-                datatype=["str", "str", "str", "str", "str"],
-                interactive=False
-            )
-
-        # 3. SEKME: MEKAN TEMASI & PROMPT STÜDYOSU
-        with gr.TabItem("🎨 Mekan Stili & Görsel Tasarımcısı"):
-            gr.Markdown("### 🏡 Yapay Zekanın Giydireceği Mekan Temasını Seçin")
-            gr.Markdown("Satıcılar fotoğraf attığında masanın etrafına hangi stilde oda giydirileceğini buradan yönetebilirsiniz:")
-            
-            theme_dropdown = gr.Dropdown(
-                label="Hazır Mimari Temalar",
-                choices=[
-                    "İskandinav Aydınlık Yemek Odası (Doğal Gün Işığı, Meşe Parke)",
-                    "Lüks Modern Salon (Mermer Zemin, LED Aydınlatmalı TV Konsolu)",
-                    "Endüstriyel Loft (Tuğla Duvar, Geniş Fabrika Pencereleri)",
-                    "Ferah Ev-Ofis (Büyük Cam, Minimalist Çalışma Alanı, Bitkiler)"
-                ],
-                value="İskandinav Aydınlık Yemek Odası (Doğal Gün Işığı, Meşe Parke)"
-            )
-            custom_prompt_box = gr.Textbox(
-                label="Özel Mimari İpuçları / İsteğe Bağlı Ekstra Prompt",
-                placeholder="Örn: linen runner on table, morning sunlight, architectural digest magazine style..."
-            )
-            save_theme_btn = gr.Button("🎨 Seçilen Temayı Aktif Et", variant="primary")
-            theme_msg = gr.Markdown()
-            save_theme_btn.click(save_ai_theme, inputs=[theme_dropdown, custom_prompt_box], outputs=[theme_msg])
-
-        # 4. SEKME: CANLI SİSTEM LOGLARI
-        with gr.TabItem("📝 Canlı Terminal & Log Akışı"):
-            gr.Markdown("### 💻 Gerçek Zamanlı Sistem & Telegram İşlem Kayıtları")
-            system_log_box = gr.Textbox(
-                label="Canlı Konsol Akışı",
-                lines=16,
-                interactive=False,
-                value="Sistem başlatıldı, dinleniyor..."
-            )
-
-        # 5. SEKME: API & ENTEGRASYON AYARLARI
-        with gr.TabItem("⚙️ API & Güvenlik Ayarları"):
-            gr.Markdown("### 🔑 Canlı Anahtarlar (Botu Kapatmadan Değiştirilebilir)")
-            cfg_or_key = gr.Textbox(
-                label="OpenRouter API Key",
+            login_password = gr.Textbox(
+                label="Şifre",
                 type="password",
-                value=os.getenv("OPENROUTER_API_KEY", "")
+                placeholder="Şifrenizi girin (varsayılan: trendyol123)",
+                value=""
             )
-            save_cfg_btn = gr.Button("💾 Ayarları Güncelle", variant="primary")
-            cfg_msg = gr.Markdown()
-            save_cfg_btn.click(
-                lambda k: ("✅ API Anahtarı başarıyla güncellendi!" if k else "⚠️ Anahtar boş bırakılamaz."),
-                inputs=[cfg_or_key],
-                outputs=[cfg_msg]
-            )
+            login_btn = gr.Button("🚀 Sisteme Giriş Yap", variant="primary", size="lg")
+            login_error = gr.Markdown()
+            gr.HTML("""
+            <div style="text-align: center; margin-top: 22px; font-size: 12px; color: #94A3B8; border-top: 1px solid #F1F5F9; padding-top: 14px;">
+                🔒 <b>256-bit Güvenli Oturum</b><br>
+                Varsayılan: <code>admin</code> / <code>trendyol123</code> (Hugging Face Secrets üzerinden değiştirilebilir)
+            </div>
+            """)
 
-    # Kullanıcı İşlem Butonları Olayları
-    create_acc_btn.click(
-        add_user_action,
-        inputs=[in_uid, in_uname, in_fname, in_store, in_role, in_status],
-        outputs=[user_action_msg, user_table, metric_users]
-    )
-    btn_activate.click(
-        lambda uid: set_user_status_action(uid, "Aktif"),
-        inputs=[target_uid_input],
-        outputs=[user_action_msg, user_table]
-    )
-    btn_deactivate.click(
-        lambda uid: set_user_status_action(uid, "Pasif"),
-        inputs=[target_uid_input],
-        outputs=[user_action_msg, user_table]
-    )
-    btn_del_user.click(
-        delete_user_action,
-        inputs=[target_uid_input],
-        outputs=[user_action_msg, user_table, metric_users]
-    )
+    # ----------------------------------------------------
+    # 2. ANA YÖNETİCİ KONTROL MERKEZİ (DASHBOARD)
+    # ----------------------------------------------------
+    with gr.Column(visible=False, elem_classes=["dashboard-animate"]) as dashboard_box:
+        with gr.Row():
+            with gr.Column(scale=9):
+                gr.Markdown("# 🏢 **Trendyol AI Mağaza Yöneticisi - Kurumsal Admin Paneli**")
+                gr.Markdown("Bu kontrol paneli üzerinden botu, kullanıcı hesaplarını, üretilen görselleri ve sistem ayarlarını 7/24 denetleyebilirsiniz.")
+            with gr.Column(scale=3):
+                with gr.Row():
+                    refresh_all_btn = gr.Button("🔄 Paneli Yenile", variant="primary")
+                    logout_btn = gr.Button("🚪 Çıkış Yap", variant="stop")
+                    restart_svc_btn = gr.Button("⚡ Botu Yeniden Başlat")
 
-    # Buton olayları
-    refresh_all_btn.click(
-        get_dashboard_data,
-        outputs=[metric_users, metric_products, metric_status, user_table, product_table, system_log_box]
+        # Üst İstatistik Kartları (KPIs)
+        with gr.Row():
+            metric_users = gr.Textbox(label="👥 Toplam Satıcı / Kullanıcı", value="0 Satıcı", interactive=False)
+            metric_products = gr.Textbox(label="📸 Üretilen Katalog Görseli", value="0 Görsel", interactive=False)
+            metric_status = gr.Textbox(label="⚡ Sistem Canlılık Durumu", value="🟢 ÇALIŞIYOR (7/24 Kesintisiz)", interactive=False)
+
+        action_alert = gr.Markdown()
+
+        gr.Markdown("---")
+
+        with gr.Tabs():
+            # 1. SEKME: KULLANICI & HESAP YÖNETİMİ
+            with gr.TabItem("👤 Kullanıcı & Hesap Yönetimi"):
+                gr.Markdown("### ➕ Yeni Satıcı / Ekip Hesabı Açma Arayüzü")
+                with gr.Group():
+                    with gr.Row():
+                        in_uid = gr.Textbox(label="Telegram Kullanıcı ID (Bilinmiyorsa boş bırakılabilir)", placeholder="Örn: 987654321")
+                        in_uname = gr.Textbox(label="Telegram Kullanıcı Adı", placeholder="@satici_adi")
+                        in_fname = gr.Textbox(label="Ad Soyad", placeholder="Ahmet Yılmaz")
+                        in_store = gr.Textbox(label="Mağaza / Firma Adı", placeholder="Trend Ahşap Ltd.")
+                    with gr.Row():
+                        in_role = gr.Dropdown(label="Yetki / Rol", choices=["Satıcı", "Yönetici (Admin)", "Tasarımcı"], value="Satıcı")
+                        in_status = gr.Dropdown(label="Hesap Durumu", choices=["Aktif", "Onay Bekliyor", "Pasif"], value="Aktif")
+                        create_acc_btn = gr.Button("💾 Kullanıcı / Hesap Aç", variant="primary")
+                
+                user_action_msg = gr.Markdown()
+
+                gr.Markdown("---")
+                gr.Markdown("### 📋 Kayıtlı Satıcılar & Hesap Yetki Listesi")
+                user_table = gr.Dataframe(
+                    headers=["Kullanıcı ID", "Ad Soyad", "Telegram", "Mağaza Adı", "Rol", "Durum", "İşlenen Görsel", "Son İşlem"],
+                    datatype=["str", "str", "str", "str", "str", "str", "str", "str"],
+                    interactive=False
+                )
+                
+                with gr.Row():
+                    target_uid_input = gr.Textbox(label="Seçili Kullanıcı ID (Yetki/Silme İşlemleri)", placeholder="İşlem yapılacak ID'yi yazınız")
+                    btn_activate = gr.Button("✅ Yetkiyi Aç (Aktif)")
+                    btn_deactivate = gr.Button("⏸️ Yetkiyi Kapat (Pasif)")
+                    btn_del_user = gr.Button("🗑️ Kullanıcıyı Sil", variant="stop")
+
+            # 2. SEKME: İŞLENEN ÜRÜNLER & İLANLAR
+            with gr.TabItem("🖼️ İşlenen Ürünler & Katalog Galerisi"):
+                gr.Markdown("### 🛍️ Son Üretilen Trendyol İlanları ve Mekan Renderları")
+                product_table = gr.Dataframe(
+                    headers=["Kayıt No", "Satıcı Adı", "Önerilen Trendyol Başlığı", "Lifestyle Render", "Tarih"],
+                    datatype=["str", "str", "str", "str", "str"],
+                    interactive=False
+                )
+
+            # 3. SEKME: MEKAN TEMASI & PROMPT STÜDYOSU
+            with gr.TabItem("🎨 Mekan Stili & Görsel Tasarımcısı"):
+                gr.Markdown("### 🏡 Yapay Zekanın Giydireceği Mekan Temasını Seçin")
+                gr.Markdown("Satıcılar fotoğraf attığında masanın etrafına hangi stilde oda giydirileceğini buradan yönetebilirsiniz:")
+                
+                theme_dropdown = gr.Dropdown(
+                    label="Hazır Mimari Temalar",
+                    choices=[
+                        "İskandinav Aydınlık Yemek Odası (Doğal Gün Işığı, Meşe Parke)",
+                        "Lüks Modern Salon (Mermer Zemin, LED Aydınlatmalı TV Konsolu)",
+                        "Endüstriyel Loft (Tuğla Duvar, Geniş Fabrika Pencereleri)",
+                        "Ferah Ev-Ofis (Büyük Cam, Minimalist Çalışma Alanı, Bitkiler)"
+                    ],
+                    value="İskandinav Aydınlık Yemek Odası (Doğal Gün Işığı, Meşe Parke)"
+                )
+                custom_prompt_box = gr.Textbox(
+                    label="Özel Mimari İpuçları / İsteğe Bağlı Ekstra Prompt",
+                    placeholder="Örn: linen runner on table, morning sunlight, architectural digest magazine style..."
+                )
+                save_theme_btn = gr.Button("🎨 Seçilen Temayı Aktif Et", variant="primary")
+                theme_msg = gr.Markdown()
+                save_theme_btn.click(save_ai_theme, inputs=[theme_dropdown, custom_prompt_box], outputs=[theme_msg])
+
+            # 4. SEKME: CANLI SİSTEM LOGLARI
+            with gr.TabItem("📝 Canlı Terminal & Log Akışı"):
+                gr.Markdown("### 💻 Gerçek Zamanlı Sistem & Telegram İşlem Kayıtları")
+                system_log_box = gr.Textbox(
+                    label="Canlı Konsol Akışı",
+                    lines=16,
+                    interactive=False,
+                    value="Sistem başlatıldı, dinleniyor..."
+                )
+
+            # 5. SEKME: API & ENTEGRASYON AYARLARI
+            with gr.TabItem("⚙️ API & Güvenlik Ayarları"):
+                gr.Markdown("### 🔑 Canlı Anahtarlar (Botu Kapatmadan Değiştirilebilir)")
+                cfg_or_key = gr.Textbox(
+                    label="OpenRouter API Key",
+                    type="password",
+                    value=os.getenv("OPENROUTER_API_KEY", "")
+                )
+                save_cfg_btn = gr.Button("💾 Ayarları Güncelle", variant="primary")
+                cfg_msg = gr.Markdown()
+                save_cfg_btn.click(
+                    lambda k: ("✅ API Anahtarı başarıyla güncellendi!" if k else "⚠️ Anahtar boş bırakılamaz."),
+                    inputs=[cfg_or_key],
+                    outputs=[cfg_msg]
+                )
+
+        # Kullanıcı İşlem Butonları Olayları
+        create_acc_btn.click(
+            add_user_action,
+            inputs=[in_uid, in_uname, in_fname, in_store, in_role, in_status],
+            outputs=[user_action_msg, user_table, metric_users]
+        )
+        btn_activate.click(
+            lambda uid: set_user_status_action(uid, "Aktif"),
+            inputs=[target_uid_input],
+            outputs=[user_action_msg, user_table]
+        )
+        btn_deactivate.click(
+            lambda uid: set_user_status_action(uid, "Pasif"),
+            inputs=[target_uid_input],
+            outputs=[user_action_msg, user_table]
+        )
+        btn_del_user.click(
+            delete_user_action,
+            inputs=[target_uid_input],
+            outputs=[user_action_msg, user_table, metric_users]
+        )
+
+        refresh_all_btn.click(
+            get_dashboard_data,
+            outputs=[metric_users, metric_products, metric_status, user_table, product_table, system_log_box]
+        )
+        restart_svc_btn.click(restart_bot_action, outputs=[action_alert])
+
+    # ----------------------------------------------------
+    # GİRİŞ / ÇIKIŞ OLAYLARI (LOGIN & LOGOUT BINDINGS)
+    # ----------------------------------------------------
+    login_btn.click(
+        login_action,
+        inputs=[login_username, login_password],
+        outputs=[login_box, dashboard_box, login_error, metric_users, metric_products, metric_status, user_table, product_table, system_log_box]
     )
-    restart_svc_btn.click(restart_bot_action, outputs=[action_alert])
-    
-    # Sayfa ilk yüklendiğinde verileri doldur
-    demo.load(
-        get_dashboard_data,
-        outputs=[metric_users, metric_products, metric_status, user_table, product_table, system_log_box]
+    login_password.submit(
+        login_action,
+        inputs=[login_username, login_password],
+        outputs=[login_box, dashboard_box, login_error, metric_users, metric_products, metric_status, user_table, product_table, system_log_box]
+    )
+    logout_btn.click(
+        logout_action,
+        outputs=[login_box, dashboard_box, login_username, login_password, login_error]
     )
 
 if __name__ == "__main__":
