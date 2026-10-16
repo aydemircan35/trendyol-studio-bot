@@ -192,10 +192,10 @@ def create_dual_layer_shadow(product_cropped: Image.Image) -> Image.Image:
     diffuse.putalpha(a2)
 
     # Tuvale birleştir
-    shadow_canvas = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-    # Bacak hizasına yapıştır
-    base_y = int(h * 0.86)
-    shadow_canvas.paste(diffuse, (0, base_y - 8), diffuse)
+    shadow_canvas = Image.new("RGBA", (w, h + int(h * 0.15)), (0, 0, 0, 0))
+    # Bacak tabanı hizasına (en alt noktaya) yerleştir
+    base_y = int(h * 0.95)
+    shadow_canvas.paste(diffuse, (0, base_y - 4), diffuse)
     shadow_canvas.paste(contact, (0, base_y), contact)
 
     return shadow_canvas
@@ -203,14 +203,18 @@ def create_dual_layer_shadow(product_cropped: Image.Image) -> Image.Image:
 
 def fetch_room_background(prompt: str, seed: int = 108) -> Image.Image:
     """
-    Pollinations / Flux üzerinden yüksek çözünürlüklü mimari mekan çeker.
+    Pollinations / Flux üzerinden yüksek çözünürlüklü mimari mekan çeker ve filigranı temizler.
     """
     clean_p = requests.utils.quote(prompt)
     url = f"https://image.pollinations.ai/prompt/{clean_p}?width=1200&height=900&model=flux&nologo=true&seed={seed}"
     try:
         resp = requests.get(url, timeout=25)
         if resp.status_code == 200 and len(resp.content) > 2000:
-            return Image.open(BytesIO(resp.content)).convert("RGBA")
+            raw_room = Image.open(BytesIO(resp.content)).convert("RGBA")
+            rw, rh = raw_room.size
+            # Alt köşedeki minik filigran alanını temizlemek için alt 34 pikseli kırpıp orantılar
+            cleaned_room = raw_room.crop((0, 0, rw, rh - 34)).resize((rw, rh), Image.Resampling.LANCZOS)
+            return cleaned_room
     except Exception as e:
         logger.warning(f"Oda arka planı çekilemedi ({e}), yedek stüdyo oluşturuluyor.")
 
@@ -231,29 +235,41 @@ def agent_2_stage_product(product_cropped: Image.Image, vision_plan: dict, style
     room_prompt = vision_plan.get("room_prompt") or preset["bg_prompt"]
     seed = preset.get("seed", 108)
 
-    # 2. Odayı yükle
+    # 2. Odayı yükle (filigransız)
     room_bg = fetch_room_background(room_prompt, seed=seed)
     bg_w, bg_h = room_bg.size
 
-    # 3. Masayı oda perspektifine göre orantıla (Genişlik max %64, Yükseklik max %44)
+    # 3. Masayı oda zeminine oturtacak perspektif oranı (Genişlik %56)
+    bbox = product_cropped.getbbox()
+    if bbox:
+        product_cropped = product_cropped.crop(bbox)
+        
     pw, ph = product_cropped.size
-    max_w = int(bg_w * 0.64)
-    max_h = int(bg_h * 0.44)
-    scale = min(max_w / pw, max_h / ph)
-    new_w = max(10, int(pw * scale))
-    new_h = max(10, int(ph * scale))
+    new_w = int(bg_w * 0.56)
+    scale = new_w / pw
+    new_h = int(ph * scale)
     
     scaled_product = product_cropped.resize((new_w, new_h), Image.Resampling.LANCZOS)
 
-    # 4. Çift katmanlı temas gölgesi üret
-    shadow_layer = create_dual_layer_shadow(scaled_product)
-
-    # 5. Konumlandırma: Zemin odak noktasına yerleştir (zeminden %9 pay)
+    # 4. Ayaklar parke/zemin üzerinde (zeminden 65 piksel yukarıda tam oturur)
     pos_x = (bg_w - new_w) // 2
-    pos_y = bg_h - new_h - int(bg_h * 0.09)
+    pos_y = bg_h - new_h - 65
 
-    # 6. Önce çift katmanlı gölgeyi, sonra gerçek masayı yapıştır
-    room_bg.paste(shadow_layer, (pos_x, pos_y), shadow_layer)
+    # 5. Çift Katmanlı Doğal Gölge Motoru
+    from PIL import ImageDraw
+    diffuse_shadow = Image.new("RGBA", (int(new_w * 1.15), int(new_h * 0.22)), (0, 0, 0, 0))
+    d = ImageDraw.Draw(diffuse_shadow)
+    d.ellipse([(0, 0), (int(new_w * 1.15), int(new_h * 0.22))], fill=(15, 15, 20, 150))
+    diffuse_shadow = diffuse_shadow.filter(ImageFilter.GaussianBlur(18))
+
+    contact_shadow = Image.new("RGBA", (new_w, int(new_h * 0.08)), (10, 10, 15, 0))
+    c_alpha = scaled_product.split()[-1].resize((new_w, int(new_h * 0.08)))
+    contact_shadow.putalpha(c_alpha)
+    contact_shadow = contact_shadow.filter(ImageFilter.GaussianBlur(3))
+
+    # 6. Sırayla yapıştır: Difüzyon gölgesi -> Sert temas gölgesi -> Gerçek mobilya
+    room_bg.paste(diffuse_shadow, (pos_x - int(new_w * 0.075), pos_y + new_h - int(new_h * 0.11)), diffuse_shadow)
+    room_bg.paste(contact_shadow, (pos_x, pos_y + new_h - int(new_h * 0.04)), contact_shadow)
     room_bg.paste(scaled_product, (pos_x, pos_y), scaled_product)
 
     return room_bg.convert("RGB")

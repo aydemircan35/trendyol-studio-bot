@@ -20,8 +20,11 @@ def get_session():
     global _session
     if _session is None:
         try:
+            import onnxruntime as ort
+            opts = ort.SessionOptions()
+            opts.enable_cpu_mem_arena = False
             # En son teknoloji birefnet-general modeli (mobilya, ayaklar ve camı kusursuz ayıklar)
-            _session = rembg.new_session("birefnet-general", providers=["CPUExecutionProvider"])
+            _session = rembg.new_session("birefnet-general", providers=["CPUExecutionProvider"], sess_opts=opts)
         except Exception as e:
             logger.warning(f"birefnet yüklenemedi, u2net'e dönülüyor: {e}")
             _session = rembg.new_session("u2net", providers=["CPUExecutionProvider"])
