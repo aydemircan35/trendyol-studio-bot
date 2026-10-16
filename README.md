@@ -1,7 +1,7 @@
 ---
 title: Trendyol AI Studio Bot
 emoji: 🛍️
-colorFrom: orange
+colorFrom: yellow
 colorTo: red
 sdk: gradio
 sdk_version: 5.20.0
