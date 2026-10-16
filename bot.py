@@ -45,6 +45,8 @@ SUPPLIER_ID = os.getenv("TRENDYOL_SUPPLIER_ID", "")
 API_KEY = os.getenv("TRENDYOL_API_KEY", "")
 API_SECRET = os.getenv("TRENDYOL_API_SECRET", "")
 
+DASHBOARD_URL = os.getenv("DASHBOARD_URL", "https://huggingface.co/spaces/Erictheoden/trendyol-studio-bot")
+
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -56,26 +58,54 @@ def get_trendyol_client():
 
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Karşılama ve ana kontrol menüsü."""
-    user_name = update.effective_user.first_name or "Değerli Satıcı"
+    """Karşılama, yönlendirme ve hesap açma linki menüsü."""
+    user = update.effective_user
+    user_name = user.first_name or "Değerli Satıcı"
     is_live = bool(get_trendyol_client())
     mode_text = "🟢 **Canlı Mağaza Modu**" if is_live else "🟡 **Test / Simülasyon Modu (Aktif)**"
 
+    # Kullanıcıyı veritabanına kaydet/güncelle
+    database.log_user_action(user.id, user.first_name, user.username, action="start")
+
     text = (
-        f"👋 Merhaba {user_name}!\n\n"
-        "🤖 **Trendyol AI Mağaza Yöneticisi'ne Hoş Geldin.**\n"
+        f"👋 **Merhaba {user_name}!**\n\n"
+        "🤖 **Trendyol AI Mağaza Yöneticisi & Görsel Stüdyosu'na Hoş Geldiniz.**\n"
         f"Durum: {mode_text}\n\n"
-        "Neler yapabilirsin?\n\n"
-        "📸 **1. Ürün Çekimi & İlan:**\n"
-        "Herhangi bir ürün fotoğrafı gönder. Saniyeler içinde stüdyo fonuna alıp Trendyol ilanını hazırlasın.\n\n"
-        "💬 **2. Müşteri Destek Testi (Soru-Cevap):**\n"
-        "`/sorular` yazarak müşterilerden gelen soruları ve yapay zekanın hazırladığı kurumsal yanıtları incele.\n\n"
-        "📦 **3. Fiyat & Stok Testi:**\n"
-        "`/stok BARKOD123 50 299.90` yazarak fiyat ve stok güncellemeyi dene.\n\n"
-        "⚙️ **4. Gerçek Mağazaya Bağlama:**\n"
-        "`/bagla <SupplierID> <APIKey> <APISecret>`"
+        "✨ **Neler Yapabilirsiniz?**\n"
+        "📸 **1. Fotoğraf Gönder:** Doğrudan ürününün fotoğrafını gönder. Yapay zeka anında:\n"
+        "   • 1200x1800 saf beyaz fon stüdyo vitrin çekimini,\n"
+        "   • Fotogerçekçi mimari yaşam alanı (lifestyle) katalog çekimini,\n"
+        "   • SEO uyumlu başlık, nitelikler ve vitrin açıklamasını hazırlar!\n\n"
+        "💬 **2. Müşteri Destek Testi:** `/sorular` ile gelen soruları yapay zekaya yanıtlatın.\n"
+        "📦 **3. Fiyat & Stok Testi:** `/stok BARKOD123 50 299.90` ile güncelleme yapın.\n\n"
+        "🌐 **Hesap Oluşturma & Kontrol Paneli:**\n"
+        "Mağazanızı kaydetmek veya web kontrol merkezine girmek için aşağıdaki butonu kullanabilirsiniz 👇"
     )
-    await update.message.reply_text(text, parse_mode="Markdown")
+
+    keyboard = [
+        [InlineKeyboardButton("🌐 📝 Satıcı Hesabı Aç / Kontrol Paneli", url=DASHBOARD_URL)],
+        [InlineKeyboardButton("❓ Müşteri Soruları (Test)", callback_data="test_questions")]
+    ]
+    await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+
+async def account_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Hesap bilgisi ve kayıt linki komutu."""
+    user = update.effective_user
+    user_name = user.first_name or "Değerli Satıcı"
+    text = (
+        f"👤 **Hesap & Satıcı Kayıt Bilgileri**\n\n"
+        f"• **Telegram ID:** `{user.id}`\n"
+        f"• **Kullanıcı:** @{user.username or 'Belirtilmemiş'}\n"
+        f"• **Ad Soyad:** {user_name}\n\n"
+        "🌐 **Hesap Açma & Yönetim Portalı:**\n"
+        "Mağazanızı kaydetmek veya kurumsal kontrol merkezine giriş yapmak için aşağıdaki bağlantıya tıklayabilirsiniz:\n"
+        f"👉 [Trendyol AI Satıcı Portalı]({DASHBOARD_URL})"
+    )
+    keyboard = [
+        [InlineKeyboardButton("🔗 Satıcı Hesabı Aç / Yönetim Paneli", url=DASHBOARD_URL)]
+    ]
+    await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -260,6 +290,7 @@ def main():
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).request(t_request).build()
     
     app.add_handler(CommandHandler("start", start_command))
+    app.add_handler(CommandHandler(["hesap", "kayit"], account_command))
     app.add_handler(CommandHandler("sorular", handle_questions))
     app.add_handler(CommandHandler("stok", handle_stock))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))

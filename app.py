@@ -222,6 +222,25 @@ def logout_action():
     )
 
 
+def public_register_action(fname, sname, tg_user):
+    import random
+    if not fname or not fname.strip():
+        return "⚠️ Lütfen Ad Soyad alanını doldurunuz."
+    if not sname or not sname.strip():
+        return "⚠️ Lütfen Mağaza / Firma Adınızı doldurunuz."
+    
+    clean_tg = (tg_user or "").strip().lstrip("@")
+    user_id = random.randint(100000000, 999999999)
+    database.add_or_update_user(user_id, fname.strip(), clean_tg, role="Satıcı", status="Aktif", store_name=sname.strip())
+    log_message(f"🎉 Yeni satıcı portaldan kaydını açtı: {fname} ({sname})")
+    
+    return (
+        f"🎉 **Tebrikler {fname}!**\n\n"
+        f"**{sname}** mağazanız için satıcı hesabınız başarıyla oluşturuldu.\n\n"
+        "👉 Şimdi Telegram uygulamasından **[@Trendyol_studio_mehmetbot](https://t.me/Trendyol_studio_mehmetbot)** botuna geçerek ürün fotoğraflarınızı gönderebilir, saf beyaz fon ve mimari yaşam alanı katalog çekimlerinizi anında alabilirsiniz!"
+    )
+
+
 # ==========================================
 # PROFESYONEL GRADIO DASHBOARD & ANİMASYONLU GİRİŞ
 # ==========================================
@@ -243,9 +262,9 @@ custom_css = """
     -webkit-backdrop-filter: blur(18px) !important;
     border: 1.5px solid rgba(255, 107, 0, 0.28) !important;
     border-radius: 22px !important;
-    padding: 40px 35px !important;
+    padding: 35px 30px !important;
     box-shadow: 0 25px 50px -12px rgba(255, 107, 0, 0.22), 0 0 20px rgba(0, 0, 0, 0.05) !important;
-    max-width: 480px !important;
+    max-width: 520px !important;
     margin: 0 auto !important;
     animation: slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
     transition: transform 0.3s ease, box-shadow 0.3s ease;
@@ -271,7 +290,7 @@ custom_css = """
     text-align: center;
     color: #64748B;
     font-size: 14px;
-    margin-bottom: 24px;
+    margin-bottom: 20px;
 }
 
 @keyframes slideUp {
@@ -303,36 +322,45 @@ custom_theme = gr.themes.Soft(
 with gr.Blocks(title="Trendyol AI - Yönetici Kontrol Merkezi", theme=custom_theme, css=custom_css) as demo:
     
     # ----------------------------------------------------
-    # 1. ANİMASYONLU GİRİŞ EKRANI (LOGIN SCREEN)
+    # 1. ANİMASYONLU GİRİŞ VE HESAP AÇMA EKRANI
     # ----------------------------------------------------
     with gr.Column(visible=True, elem_classes=["login-wrapper"]) as login_box:
         with gr.Column(elem_classes=["login-card"]):
             gr.HTML("""
-            <div style="text-align: center; margin-bottom: 20px;">
-                <div style="font-size: 46px; margin-bottom: 10px; animation: pulse 2s infinite;">🔐</div>
+            <div style="text-align: center; margin-bottom: 16px;">
+                <div style="font-size: 42px; margin-bottom: 8px;">🏢</div>
                 <div class="login-title">Trendyol AI Studio</div>
-                <div class="login-subtitle">Kurumsal Yönetici Kontrol Merkezi Girişi</div>
+                <div class="login-subtitle">Satıcı & Yönetici Portalı</div>
             </div>
             """)
-            login_username = gr.Textbox(
-                label="Kullanıcı Adı",
-                placeholder="Yönetici adınızı girin (varsayılan: admin)",
-                value=""
-            )
-            login_password = gr.Textbox(
-                label="Şifre",
-                type="password",
-                placeholder="Şifrenizi girin (varsayılan: trendyol123)",
-                value=""
-            )
-            login_btn = gr.Button("🚀 Sisteme Giriş Yap", variant="primary", size="lg")
-            login_error = gr.Markdown()
-            gr.HTML("""
-            <div style="text-align: center; margin-top: 22px; font-size: 12px; color: #94A3B8; border-top: 1px solid #F1F5F9; padding-top: 14px;">
-                🔒 <b>256-bit Güvenli Oturum</b><br>
-                Varsayılan: <code>admin</code> / <code>trendyol123</code> (Hugging Face Secrets üzerinden değiştirilebilir)
-            </div>
-            """)
+            with gr.Tabs():
+                with gr.TabItem("🔐 Yönetici Girişi"):
+                    login_username = gr.Textbox(
+                        label="Kullanıcı Adı",
+                        placeholder="Yönetici adınızı girin (varsayılan: admin)",
+                        value=""
+                    )
+                    login_password = gr.Textbox(
+                        label="Şifre",
+                        type="password",
+                        placeholder="Şifrenizi girin (varsayılan: trendyol123)",
+                        value=""
+                    )
+                    login_btn = gr.Button("🚀 Sisteme Giriş Yap", variant="primary", size="lg")
+                    login_error = gr.Markdown()
+                    gr.HTML("""
+                    <div style="text-align: center; margin-top: 15px; font-size: 12px; color: #94A3B8;">
+                        🔒 Yönetici: <code>admin</code> / <code>trendyol123</code>
+                    </div>
+                    """)
+
+                with gr.TabItem("📝 Yeni Satıcı Hesabı Aç"):
+                    gr.Markdown("Yeni satıcı mısınız? Bilgilerinizi girerek anında hesabınızı oluşturun:")
+                    reg_fname = gr.Textbox(label="Ad Soyad", placeholder="Örn: Mehmet Yılmaz")
+                    reg_store = gr.Textbox(label="Mağaza / Firma Adı", placeholder="Örn: Trend Ahşap Mobilya")
+                    reg_tg = gr.Textbox(label="Telegram Kullanıcı Adınız", placeholder="Örn: @mehmet_35 (veya telefon/kullanıcı adı)")
+                    reg_btn = gr.Button("✨ Satıcı Hesabımı Aç", variant="primary", size="lg")
+                    reg_msg = gr.Markdown()
 
     # ----------------------------------------------------
     # 2. ANA YÖNETİCİ KONTROL MERKEZİ (DASHBOARD)
@@ -491,6 +519,11 @@ with gr.Blocks(title="Trendyol AI - Yönetici Kontrol Merkezi", theme=custom_the
     logout_btn.click(
         logout_action,
         outputs=[login_box, dashboard_box, login_username, login_password, login_error]
+    )
+    reg_btn.click(
+        public_register_action,
+        inputs=[reg_fname, reg_store, reg_tg],
+        outputs=[reg_msg]
     )
 
 if __name__ == "__main__":
