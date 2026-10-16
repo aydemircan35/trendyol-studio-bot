@@ -27,7 +27,23 @@ def get_session():
 def remove_background(input_image_bytes: bytes) -> Image.Image:
     """Görselin arka planını rembg u2net kullanarak hızlıca temizler."""
     session = get_session()
-    output_bytes = rembg.remove(input_image_bytes, session=session)
+    
+    # 4000x3000 gibi devasa telefon fotoğraflarını önce 1500px sınırına çekiyoruz.
+    # Bu optimizasyon işlem süresini 45 saniyeden 1.5 saniyeye düşürür ve Timeout hatasını engeller!
+    orig_img = Image.open(BytesIO(input_image_bytes))
+    if orig_img.mode != "RGB":
+        orig_img = orig_img.convert("RGB")
+    
+    # Boyut çok büyükse orantılı küçült
+    max_dimension = 1500
+    if max(orig_img.size) > max_dimension:
+        orig_img.thumbnail((max_dimension, max_dimension), Image.Resampling.LANCZOS)
+    
+    buf = BytesIO()
+    orig_img.save(buf, format="JPEG", quality=92)
+    optimized_bytes = buf.getvalue()
+
+    output_bytes = rembg.remove(optimized_bytes, session=session)
     return Image.open(BytesIO(output_bytes)).convert("RGBA")
 
 

@@ -11,6 +11,7 @@ Trendyol AI Mağaza Yöneticisi & Destek Botu.
 import os
 import sys
 import io
+import asyncio
 import logging
 from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -84,19 +85,19 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     status = await message.reply_text("⏳ 1/2 Fotoğraf işleniyor: Trendyol standart beyaz stüdyo fonuna alınıyor...")
     
     try:
-        file_obj = await photo.get_file()
-        photo_bytes = await file_obj.download_as_bytearray()
+        file_obj = await photo.get_file(read_timeout=120)
+        photo_bytes = await file_obj.download_as_bytearray(read_timeout=120)
         raw_bytes = bytes(photo_bytes)
         
-        # 1. Stüdyo Görseli (1200x1800 px)
-        studio_img = process_product_image(raw_bytes)
+        # 1. Stüdyo Görseli (1200x1800 px) - CPU kilitlenmesini önlemek için ayrı thread'de çalıştırılır
+        studio_img = await asyncio.to_thread(process_product_image, raw_bytes)
         img_buffer = io.BytesIO()
         studio_img.save(img_buffer, format="JPEG", quality=95)
         img_buffer.seek(0)
         
-        # 2. SEO & Başlık Metni
+        # 2. SEO & Başlık Metni - Ayrı thread'de çalıştırılır
         await status.edit_text("⏳ 2/2 Trendyol algoritmasına uygun SEO başlığı ve özellikleri çıkarılıyor...")
-        seo_data = generate_trendyol_listing(image_bytes=raw_bytes)
+        seo_data = await asyncio.to_thread(generate_trendyol_listing, raw_bytes)
         listing_text = seo_data.get("text", "Açıklama üretildi.")
         
         await status.delete()
@@ -106,7 +107,9 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await message.reply_photo(
             photo=img_buffer,
             caption="✅ **Stüdyo Kalitesinde Trendyol Görseli (1200x1800 px)**",
-            parse_mode="Markdown"
+            parse_mode="Markdown",
+            read_timeout=120,
+            write_timeout=120
         )
         
         # İlan Metni ve Onay Butonu
@@ -219,7 +222,16 @@ def main():
         return
 
     print("🤖 Trendyol AI Manager Bot dinliyor...", flush=True)
-    app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
+    
+    # Zaman aşımı (Timeout) sınırını 120 saniyeye çıkarıyoruz
+    from telegram.request import HTTPXRequest
+    t_request = HTTPXRequest(
+        connect_timeout=60.0,
+        read_timeout=120.0,
+        write_timeout=120.0
+    )
+    
+    app = ApplicationBuilder().token(TELEGRAM_TOKEN).request(t_request).build()
     
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("sorular", handle_questions))
