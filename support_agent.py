@@ -1,26 +1,31 @@
 """
 support_agent.py
-Yapay Zeka Destek Temsilcisi:
+Yapay Zeka Destek Temsilcisi (OpenRouter API Destekli):
 Trendyol müşteri sorularını (Soru-Cevap paneli) analiz eder ve
 Trendyol kurallarına uygun kurumsal, kibar ve satışa dönüştüren yanıtlar hazırlar.
 """
 
 import os
-from google import genai
+import requests
+import json
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 def generate_customer_support_answer(question_text: str, product_title: str = "", extra_info: str = "") -> str:
     """
-    Gelen müşteri sorusuna profesyonel Trendyol yanıtı üretir.
+    Gelen müşteri sorusuna OpenRouter API kullanarak profesyonel Trendyol yanıtı üretir.
     """
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        return (
-            "Merhaba, ürünümüze gösterdiğiniz ilgi için teşekkür ederiz. "
-            "Siparişiniz en kısa sürede özenle hazırlanarak kargoya teslim edilecektir. "
-            "Keyifli alışverişler dileriz."
-        )
+    api_key = os.getenv("OPENROUTER_API_KEY")
+    default_reply = (
+        "Merhaba, öncelikle ürünümüze ve mağazamıza gösterdiğiniz ilgi için teşekkür ederiz. "
+        "Ürünümüz standart tam kalıptır, günlük tercihinize göre kendi bedeninizi seçebilirsiniz. "
+        "Başka bir sorunuz olursa memnuniyetle yardımcı olmak isteriz, keyifli alışverişler dileriz."
+    )
 
-    client = genai.Client(api_key=api_key)
+    if not api_key:
+        return default_reply
 
     prompt = f"""
 Sen profesyonel bir Trendyol satıcısının kıdemli Müşteri Destek Yöneticisisin.
@@ -40,15 +45,33 @@ UYULMASI ZORUNLU KURALLAR:
 5. Sadece müşteriye gönderilecek nihai yanıt metnini yaz, tırnak işareti veya açıklama ekleme.
 """
 
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://trendyol-studio-bot.org",
+        "X-Title": "Trendyol Studio Bot"
+    }
+
+    payload = {
+        "model": "google/gemini-2.0-flash-001",
+        "messages": [
+            {"role": "user", "content": prompt}
+        ],
+        "max_tokens": 500
+    }
+
     try:
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=prompt
+        res = requests.post(
+            "https://openrouter.ai/api/v1/chat/completions",
+            headers=headers,
+            json=payload,
+            timeout=15
         )
-        return response.text.strip()
-    except Exception:
-        return (
-            "Merhaba, öncelikle ürünümüze gösterdiğiniz ilgi için teşekkür ederiz. "
-            "Ürünümüz standart tam kalıptır, kendi bedeninizi tercih edebilirsiniz. "
-            "Keyifli alışverişler dileriz."
-        )
+        if res.status_code == 200:
+            data = res.json()
+            return data["choices"][0]["message"]["content"].strip()
+        else:
+            return default_reply
+    except Exception as e:
+        logger.error(f"Support agent hatası: {e}")
+        return default_reply
