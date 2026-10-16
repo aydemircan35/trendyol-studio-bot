@@ -1,20 +1,20 @@
 """
 image_processor.py
-Görsel işleme motoru:
-1. Arka planı temizler (rembg ile piksel piksel nesne ayrıştırma).
-2. Ürünü ortalar ve Trendyol standart ölçülerine (1200x1800 px) getirir.
-3. Ürünün altına doğal stüdyo gölgesi ekleyerek gerçekçi derinlik kazandırır.
-4. Hem saf beyaz stüdyo fonu hem de profesyonel minimalist zemin seçenekleri sunar.
+E-Ticaret Görsel ve Fotogerçekçi Mekan Render Motoru:
+1. Saf beyaz stüdyo fonu (Trendyol 1. vitrin standardı).
+2. OpenRouter (FLUX.1) ile lüks iç mekan / yaşam alanı konsept görseli üretimi (Lifestyle Staging).
 """
 
 import os
 from io import BytesIO
-from PIL import Image, ImageFilter, ImageOps
+import base64
+import requests
+from PIL import Image, ImageFilter
 import rembg
+import logging
 
+logger = logging.getLogger(__name__)
 
-# Hızlı ve hafif e-ticaret modeli: u2net (~160MB)
-# İlk çalıştırmada bir kere hafızaya alınır, sonraki tüm fotoğraflar anında işlenir
 _session = None
 
 def get_session():
@@ -25,16 +25,12 @@ def get_session():
 
 
 def remove_background(input_image_bytes: bytes) -> Image.Image:
-    """Görselin arka planını rembg u2net kullanarak hızlıca temizler."""
+    """Arka planı rembg u2net ile hızlıca temizler."""
     session = get_session()
-    
-    # 4000x3000 gibi devasa telefon fotoğraflarını önce 1500px sınırına çekiyoruz.
-    # Bu optimizasyon işlem süresini 45 saniyeden 1.5 saniyeye düşürür ve Timeout hatasını engeller!
     orig_img = Image.open(BytesIO(input_image_bytes))
     if orig_img.mode != "RGB":
         orig_img = orig_img.convert("RGB")
     
-    # Boyut çok büyükse orantılı küçült
     max_dimension = 1500
     if max(orig_img.size) > max_dimension:
         orig_img.thumbnail((max_dimension, max_dimension), Image.Resampling.LANCZOS)
@@ -47,91 +43,101 @@ def remove_background(input_image_bytes: bytes) -> Image.Image:
     return Image.open(BytesIO(output_bytes)).convert("RGBA")
 
 
-def create_studio_shadow(product_image: Image.Image, offset=(0, 15), blur_radius=25, shadow_opacity=110) -> Image.Image:
-    """
-    Ürünün altına doğal bir stüdyo temas gölgesi (contact shadow) oluşturur.
-    Böylece ürün havada asılı durmaz, masanın üstünde duruyor hissi verir.
-    """
-    # Ürünün alfa kanalını alıp gölge maskesi yap
+def create_studio_shadow(product_image: Image.Image, blur_radius=25, shadow_opacity=110) -> Image.Image:
+    """Ürünün altına doğal temas gölgesi ekler."""
     alpha = product_image.split()[-1]
-    
-    # Düz siyah ama alfa maskeli gölge katmanı
     shadow = Image.new("RGBA", product_image.size, (30, 30, 30, 0))
     shadow.putalpha(alpha)
-    
-    # Gölgeyi hafifçe basıklaştır (elips stüdyo yer gölgesi efekti)
     w, h = shadow.size
     shadow_squashed = shadow.resize((w, int(h * 0.25)), Image.Resampling.LANCZOS)
-    
-    # Yeni bir tuvale yerleştir ve bulanıklaştır
     shadow_layer = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-    # Ürünün alt kısmına yerleştir
     shadow_layer.paste(shadow_squashed, (0, int(h * 0.78)), shadow_squashed)
     shadow_layer = shadow_layer.filter(ImageFilter.GaussianBlur(blur_radius))
-    
-    # Opaklık ayarla
     r, g, b, a = shadow_layer.split()
     a = a.point(lambda p: int(p * (shadow_opacity / 255.0)))
     shadow_layer.putalpha(a)
-    
     return shadow_layer
 
 
 def process_product_image(
     input_image_bytes: bytes,
     target_width: int = 1200,
-    target_height: int = 1800,
-    bg_style: str = "white",
-    add_shadow: bool = True
+    target_height: int = 1800
 ) -> Image.Image:
-    """
-    Gelen ham ürün fotoğrafını Trendyol e-ticaret stüdyo görseline dönüştürür.
-    
-    :param input_image_bytes: Ham görsel byte verisi
-    :param target_width: Hedef genişlik (Trendyol standardı 1200)
-    :param target_height: Hedef yükseklik (Trendyol standardı 1800)
-    :param bg_style: "white" (saf stüdyo beyazı) veya "studio_gradient" (hafif stüdyo geçişli)
-    :param add_shadow: Doğal stüdyo gölgesi eklensin mi
-    :return: PIL Image (RGB formatında hazır görsel)
-    """
-    # 1. Arka planı temizle
+    """Saf beyaz fon ve doğal gölgeli Trendyol 1200x1800 vitrin görseli."""
     product_transparent = remove_background(input_image_bytes)
-    
-    # Ürünün sınırlarını bul (crop bounding box)
     bbox = product_transparent.getbbox()
-    if bbox:
-        product_cropped = product_transparent.crop(bbox)
-    else:
-        product_cropped = product_transparent
+    product_cropped = product_transparent.crop(bbox) if bbox else product_transparent
 
-    # 2. Ürünü tuvalin %75'ini kaplayacak şekilde orantılı yeniden boyutlandır
     max_w = int(target_width * 0.78)
     max_h = int(target_height * 0.78)
-    
     product_cropped.thumbnail((max_w, max_h), Image.Resampling.LANCZOS)
     pw, ph = product_cropped.size
 
-    # 3. Arka plan tuvalini oluştur
-    if bg_style == "white":
-        background = Image.new("RGBA", (target_width, target_height), (255, 255, 255, 255))
-    elif bg_style == "studio_gradient":
-        # Yukarıdan aşağıya çok hafif stüdyo grisi geçişi (#FFFFFF -> #F1F3F5)
-        background = Image.new("RGBA", (target_width, target_height), (248, 249, 250, 255))
-    else:
-        background = Image.new("RGBA", (target_width, target_height), (255, 255, 255, 255))
-
-    # Ürünü ortala
+    background = Image.new("RGBA", (target_width, target_height), (255, 255, 255, 255))
     x = (target_width - pw) // 2
-    # Ürünü dikeyde hafif alta doğru konumlandır (doğal vitrin dengesi)
     y = (target_height - ph) // 2 + int(target_height * 0.03)
 
-    # 4. Gölge ekle
-    if add_shadow:
-        shadow = create_studio_shadow(product_cropped)
-        background.paste(shadow, (x, y + 10), shadow)
-
-    # 5. Ürünü yapıştır
+    shadow = create_studio_shadow(product_cropped)
+    background.paste(shadow, (x, y + 10), shadow)
     background.paste(product_cropped, (x, y), product_cropped)
-
-    # RGB'ye çevirip döndür (JPEG/PNG uyumlu)
     return background.convert("RGB")
+
+
+def generate_lifestyle_scene(product_description: str) -> bytes:
+    """
+    OpenRouter FLUX.1 modeli kullanarak ürün için lüks iç mekan mimari render'ı üretir.
+    (İskandinav ferah aydınlatma, modern ahşap/mermer detaylar, Architectural Digest tarzı)
+    """
+    api_key = os.getenv("OPENROUTER_API_KEY")
+    if not api_key:
+        return None
+
+    # Müşterinin paylaştığı gibi lüks iç mimari katalog stili
+    prompt = (
+        f"Ultra-photorealistic commercial interior design architectural photo of {product_description}. "
+        "Set in an elegant luxurious bright modern Scandinavian dining and living room, "
+        "floor-to-ceiling windows with soft natural morning sunlight, "
+        "minimalist wooden and marble accents, aesthetic indoor plants, linen runner, ceramic tableware, "
+        "warm subtle LED strip backlighting, 8k resolution, raytracing, Architectural Digest magazine photography style."
+    )
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://trendyol-studio-bot.org",
+        "X-Title": "Trendyol Studio Bot"
+    }
+
+    # OpenRouter üzerinden FLUX.1 veya SDXL görsel üretimi
+    payload = {
+        "model": "black-forest-labs/flux-1-schnell",
+        "prompt": prompt,
+        "width": 1024,
+        "height": 768
+    }
+
+    try:
+        # OpenRouter images/generations endpoint
+        res = requests.post(
+            "https://openrouter.ai/api/v1/images/generations",
+            headers=headers,
+            json=payload,
+            timeout=40
+        )
+        if res.status_code == 200:
+            data = res.json()
+            # B64 veya URL döndürebilir
+            if "data" in data and len(data["data"]) > 0:
+                first_item = data["data"][0]
+                if "b64_json" in first_item:
+                    return base64.b64decode(first_item["b64_json"])
+                elif "url" in first_item:
+                    img_resp = requests.get(first_item["url"], timeout=20)
+                    return img_resp.content
+        else:
+            logger.warning(f"Görsel üretim yanıtı: {res.status_code} - {res.text}")
+    except Exception as e:
+        logger.error(f"Lifestyle görsel üretim hatası: {e}")
+
+    return None

@@ -31,7 +31,7 @@ if sys.stdout.encoding != 'utf-8':
     except Exception:
         pass
 
-from image_processor import process_product_image
+from image_processor import process_product_image, generate_lifestyle_scene
 from seo_generator import generate_trendyol_listing
 from support_agent import generate_customer_support_answer
 from trendyol_api import TrendyolClient
@@ -89,28 +89,46 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         photo_bytes = await file_obj.download_as_bytearray(read_timeout=120)
         raw_bytes = bytes(photo_bytes)
         
-        # 1. Stüdyo Görseli (1200x1800 px) - CPU kilitlenmesini önlemek için ayrı thread'de çalıştırılır
+        # 1. Stüdyo Görseli (1200x1800 px)
         studio_img = await asyncio.to_thread(process_product_image, raw_bytes)
         img_buffer = io.BytesIO()
         studio_img.save(img_buffer, format="JPEG", quality=95)
         img_buffer.seek(0)
         
-        # 2. SEO & Başlık Metni - Ayrı thread'de çalıştırılır
-        await status.edit_text("⏳ 2/2 Trendyol algoritmasına uygun SEO başlığı ve özellikleri çıkarılıyor...")
+        # 2. SEO & Başlık Metni
+        await status.edit_text("⏳ 2/3 Trendyol algoritmasına uygun SEO başlığı ve özellikleri çıkarılıyor...")
         seo_data = await asyncio.to_thread(generate_trendyol_listing, raw_bytes)
         listing_text = seo_data.get("text", "Açıklama üretildi.")
         
+        # İlk satırdan ürün başlığını al
+        product_short_desc = listing_text.split("\n")[0].replace("*", "").replace("#", "")
+        
+        # 3. Fotogerçekçi Mekan / Katalog Render'ı (Lifestyle Staging)
+        await status.edit_text("⏳ 3/3 Lüks iç mekan / yaşam alanı konsept görseli üretiliyor...")
+        lifestyle_bytes = await asyncio.to_thread(generate_lifestyle_scene, product_short_desc)
+        
         await status.delete()
         
-        # Görseli gönder
+        # 1. Fotoğrafı Gönder (Beyaz Fon)
         img_buffer.seek(0)
         await message.reply_photo(
             photo=img_buffer,
-            caption="✅ **Stüdyo Kalitesinde Trendyol Görseli (1200x1800 px)**",
+            caption="⚪ **1. Trendyol Vitrin Görseli (Saf Beyaz Fon & Doğal Gölge - 1200x1800)**",
             parse_mode="Markdown",
             read_timeout=120,
             write_timeout=120
         )
+        
+        # 2. Fotoğrafı Gönder (Fotogerçekçi Yaşam Alanı / Katalog Çekimi)
+        if lifestyle_bytes:
+            life_buf = io.BytesIO(lifestyle_bytes)
+            await message.reply_photo(
+                photo=life_buf,
+                caption="🏡 **2. Fotogerçekçi Yaşam Alanı & İç Mimari Katalog Çekimi (Satış Artırıcı Lifestyle)**",
+                parse_mode="Markdown",
+                read_timeout=120,
+                write_timeout=120
+            )
         
         # İlan Metni ve Onay Butonu
         keyboard = [
