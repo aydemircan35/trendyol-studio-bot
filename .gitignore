@@ -6,3 +6,6 @@ output/
 temp/
 *.log
 .DS_Store
+*.db
+test_*.png
+output_*.jpg

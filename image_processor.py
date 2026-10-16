@@ -163,21 +163,45 @@ def process_product_image(
     return background.convert("RGB"), product_cropped
 
 
-def generate_lifestyle_scene(input_data) -> bytes:
+import architecture_agent
+
+
+def generate_lifestyle_scene(input_data, raw_bytes: bytes = None, style_override: str = None) -> bytes:
     """
-    Satıcının attığı masanın birebir kendisini alıp fotogerçekçi odaya yerleştirir.
-    input_data bytes veya önceden ayrıştırılmış Image.Image olabilir.
+    Çift Ajanlı Mimari Staging:
+    Ajan 1: Gemini 2.5 Flash ile mobilyanın malzeme ve stilini analiz edip özel mimari oda tasarlar.
+    Ajan 2: Gerçek mobilyayı çift katmanlı temas gölgesiyle odaya entegre eder.
     """
     try:
         if isinstance(input_data, Image.Image):
             product_cropped = input_data
         else:
             product_cropped = extract_product(input_data)
-        composed_room = compose_product_into_room(product_cropped)
+            if raw_bytes is None:
+                raw_bytes = input_data
+
+        # 1. Ajan 1: Mimari Planlama
+        vision_plan = {}
+        if raw_bytes:
+            vision_plan = architecture_agent.agent_1_analyze_furniture_and_plan_room(raw_bytes)
+        
+        # 2. Ajan 2: Mekan Üretimi ve Entegrasyon
+        composed_room = architecture_agent.agent_2_stage_product(
+            product_cropped, 
+            vision_plan=vision_plan,
+            style_override=style_override or os.getenv("LIFESTYLE_STYLE_KEY")
+        )
         
         buf = BytesIO()
         composed_room.save(buf, format="JPEG", quality=95)
         return buf.getvalue()
     except Exception as e:
-        logger.error(f"Odaya yerleştirme hatası: {e}", exc_info=True)
-        return None
+        logger.error(f"Çift ajanlı mimari yerleştirme hatası: {e}", exc_info=True)
+        # Yedek mekan fonksiyonu
+        try:
+            fallback = compose_product_into_room(product_cropped)
+            buf = BytesIO()
+            fallback.save(buf, format="JPEG", quality=95)
+            return buf.getvalue()
+        except Exception:
+            return None

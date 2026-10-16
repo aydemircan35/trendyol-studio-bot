@@ -34,7 +34,8 @@ def init_db():
     for col_def in [
         ("role", "TEXT DEFAULT 'Satıcı'"),
         ("status", "TEXT DEFAULT 'Aktif'"),
-        ("store_name", "TEXT DEFAULT ''")
+        ("store_name", "TEXT DEFAULT ''"),
+        ("password", "TEXT DEFAULT ''")
     ]:
         try:
             cursor.execute(f"ALTER TABLE users ADD COLUMN {col_def[0]} {col_def[1]}")
@@ -127,6 +128,97 @@ def set_user_status(user_id: int, status: str):
     cursor.execute("UPDATE users SET status = ? WHERE user_id = ?", (status, user_id))
     conn.commit()
     conn.close()
+
+
+def create_or_get_user_account(user_id: int, first_name: str, username: str):
+    """
+    Kullanıcıya otomatik bir kullanıcı adı ve şifre üretir veya mevcut olanı döner.
+    """
+    import random
+    import string
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    now = datetime.datetime.now()
+    
+    clean_username = (username or "").strip().lstrip("@")
+    if not clean_username:
+        clean_username = f"satici_{user_id % 10000}"
+    
+    cursor.execute("SELECT user_id, first_name, username, password, role, status FROM users WHERE user_id = ?", (user_id,))
+    row = cursor.fetchone()
+    
+    if row and row[3]:
+        conn.close()
+        return {
+            "user_id": row[0],
+            "first_name": row[1],
+            "username": row[2],
+            "password": row[3],
+            "role": row[4],
+            "status": row[5],
+            "is_new": False
+        }
+    
+    # Otomatik şifre: Örn: TY-8492
+    auto_password = f"TY-{''.join(random.choices(string.digits, k=4))}"
+    
+    if row:
+        cursor.execute("UPDATE users SET password = ?, username = ?, first_name = ?, last_active = ? WHERE user_id = ?",
+                       (auto_password, clean_username, first_name, now, user_id))
+    else:
+        cursor.execute("""
+        INSERT INTO users (user_id, first_name, username, password, role, status, store_name, total_photos, total_questions, last_active)
+        VALUES (?, ?, ?, ?, 'Satıcı', 'Aktif', 'Trendyol Mağazası', 0, 0, ?)
+        """, (user_id, first_name, clean_username, auto_password, now))
+        
+    conn.commit()
+    conn.close()
+    
+    return {
+        "user_id": user_id,
+        "first_name": first_name,
+        "username": clean_username,
+        "password": auto_password,
+        "role": "Satıcı",
+        "status": "Aktif",
+        "is_new": True
+    }
+
+
+def verify_login(username_or_id: str, password_attempt: str):
+    """
+    Giriş bilgilerini kontrol eder:
+    - Admin (admin / trendyol123)
+    - Kayıtlı Satıcılar (kullanıcı adı / şifre)
+    """
+    admin_u = os.getenv("ADMIN_USERNAME", "admin")
+    admin_p = os.getenv("ADMIN_PASSWORD", "trendyol123")
+    
+    if username_or_id.strip() == admin_u and password_attempt.strip() == admin_p:
+        return {"success": True, "role": "Yönetici (Admin)", "name": "Sistem Yöneticisi", "user_id": 1}
+        
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    clean_u = username_or_id.strip().lstrip("@")
+    
+    cursor.execute("""
+    SELECT user_id, first_name, username, password, role, status, store_name
+    FROM users
+    WHERE (username = ? OR CAST(user_id AS TEXT) = ?) AND status = 'Aktif'
+    """, (clean_u, clean_u))
+    row = cursor.fetchone()
+    conn.close()
+    
+    if row and row[3] and row[3].strip() == password_attempt.strip():
+        return {
+            "success": True,
+            "role": row[4] or "Satıcı",
+            "name": row[1] or row[2],
+            "store_name": row[6] or "",
+            "user_id": row[0]
+        }
+        
+    return {"success": False, "error": "Geçersiz kullanıcı adı veya şifre!"}
 
 
 def record_product(user_id: int, user_name: str, product_title: str, has_lifestyle: bool):

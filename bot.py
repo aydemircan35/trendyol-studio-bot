@@ -58,54 +58,84 @@ def get_trendyol_client():
 
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Karşılama, yönlendirme ve hesap açma linki menüsü."""
+    """İlk girenlere hoşgeldiniz metni, /giris ve /uyeol butonları."""
     user = update.effective_user
     user_name = user.first_name or "Değerli Satıcı"
     is_live = bool(get_trendyol_client())
     mode_text = "🟢 **Canlı Mağaza Modu**" if is_live else "🟡 **Test / Simülasyon Modu (Aktif)**"
 
-    # Kullanıcıyı veritabanına kaydet/güncelle
     database.log_user_action(user.id, user.first_name, user.username, action="start")
 
     text = (
-        f"👋 **Merhaba {user_name}!**\n\n"
-        "🤖 **Trendyol AI Mağaza Yöneticisi & Görsel Stüdyosu'na Hoş Geldiniz.**\n"
+        f"👋 **Hoş Geldiniz {user_name}!**\n\n"
+        "🏢 **Trendyol AI Mağaza Yöneticisi & Akıllı Stüdyo Portalı**\n"
         f"Durum: {mode_text}\n\n"
-        "✨ **Neler Yapabilirsiniz?**\n"
-        "📸 **1. Fotoğraf Gönder:** Doğrudan ürününün fotoğrafını gönder. Yapay zeka anında:\n"
-        "   • 1200x1800 saf beyaz fon stüdyo vitrin çekimini,\n"
-        "   • Fotogerçekçi mimari yaşam alanı (lifestyle) katalog çekimini,\n"
-        "   • SEO uyumlu başlık, nitelikler ve vitrin açıklamasını hazırlar!\n\n"
-        "💬 **2. Müşteri Destek Testi:** `/sorular` ile gelen soruları yapay zekaya yanıtlatın.\n"
-        "📦 **3. Fiyat & Stok Testi:** `/stok BARKOD123 50 299.90` ile güncelleme yapın.\n\n"
-        "🌐 **Hesap Oluşturma & Kontrol Paneli:**\n"
-        "Mağazanızı kaydetmek veya web kontrol merkezine girmek için aşağıdaki butonu kullanabilirsiniz 👇"
+        "✨ **Sisteme Hoş Geldiniz! Nasıl Başlayabilirsiniz?**\n"
+        "🔑 **/giris** — Kullanıcı adı ve şifrenizi öğrenip kontrol paneline girin.\n"
+        "📝 **/uyeol** — Otomatik kullanıcı adı ve şifreyle anında üye olun.\n\n"
+        "📸 **Yapay Zeka Stüdyosu Nasıl Çalışır?**\n"
+        "Herhangi bir amatör ürün fotoğrafı atın. Sistemdeki **İkili Yapay Zeka (Dual-Agent)**:\n"
+        "1️⃣ **İç Mimar Ajanı (Vision):** Mobilyanızın dokusunu, rengini ve malzemesini inceleyip en lüks mimari odayı tasarlar.\n"
+        "2️⃣ **Stüdyo Motoru:** Ürünü 1200x1800 saf beyaz fona ve özel tasarlanan fotogerçekçi yaşam alanına yerleştirir.\n"
+        "3️⃣ **SEO Ajanı:** Trendyol algoritmasına tam uyumlu başlık, nitelikler ve vitrin ilanınızı üretir.\n\n"
+        "👇 Başlamak için aşağıdaki seçeneklerden birini tıklayabilirsiniz:"
     )
 
     keyboard = [
-        [InlineKeyboardButton("🌐 📝 Satıcı Hesabı Aç / Kontrol Paneli", url=DASHBOARD_URL)],
+        [
+            InlineKeyboardButton("📝 Tek Tıkla Üye Ol", callback_data="btn_uyeol"),
+            InlineKeyboardButton("🔑 Giriş Yap / Şifrem", callback_data="btn_giris")
+        ],
+        [InlineKeyboardButton("🌐 Web Kontrol Paneline Git", url=DASHBOARD_URL)],
         [InlineKeyboardButton("❓ Müşteri Soruları (Test)", callback_data="test_questions")]
     ]
     await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
 
-async def account_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Hesap bilgisi ve kayıt linki komutu."""
+async def uyeol_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Otomatik kullanıcı adı ve şifreyle üye olma akışı."""
     user = update.effective_user
-    user_name = user.first_name or "Değerli Satıcı"
+    acc = database.create_or_get_user_account(user.id, user.first_name, user.username)
     text = (
-        f"👤 **Hesap & Satıcı Kayıt Bilgileri**\n\n"
-        f"• **Telegram ID:** `{user.id}`\n"
-        f"• **Kullanıcı:** @{user.username or 'Belirtilmemiş'}\n"
-        f"• **Ad Soyad:** {user_name}\n\n"
-        "🌐 **Hesap Açma & Yönetim Portalı:**\n"
-        "Mağazanızı kaydetmek veya kurumsal kontrol merkezine giriş yapmak için aşağıdaki bağlantıya tıklayabilirsiniz:\n"
-        f"👉 [Trendyol AI Satıcı Portalı]({DASHBOARD_URL})"
+        f"🎉 **Tebrikler {user.first_name}! Üyeliğiniz Otomatik Oluşturuldu.**\n\n"
+        "Sisteme giriş yapabilmeniz için bilgileriniz tanımlandı:\n\n"
+        f"👤 **Kullanıcı Adı:** `{acc['username']}`\n"
+        f"🔑 **Otomatik Şifreniz:** `{acc['password']}`\n"
+        f"🆔 **Telegram ID:** `{user.id}`\n"
+        "📌 **Hesap Durumu:** 🟢 Aktif Satıcı\n\n"
+        "🌐 **Web Portalı Girişi:**\n"
+        "Aşağıdaki butona tıklayarak web kontrol merkezine bu bilgilerinizle giriş yapabilirsiniz.\n\n"
+        "📸 **Hemen Kullanmaya Başlayın:**\n"
+        "Doğrudan bu sohbete ürün fotoğrafı göndererek anında beyaz fon ve mimari yaşam alanı çekimi alabilirsiniz!"
     )
     keyboard = [
-        [InlineKeyboardButton("🔗 Satıcı Hesabı Aç / Yönetim Paneli", url=DASHBOARD_URL)]
+        [InlineKeyboardButton("🚀 Web Kontrol Paneline Giriş Yap", url=DASHBOARD_URL)]
     ]
-    await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+    if update.callback_query:
+        await update.callback_query.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+    else:
+        await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+
+async def giris_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Mevcut kullanıcı adı ve şifreyi hatırlatma ve web giriş linki."""
+    user = update.effective_user
+    acc = database.create_or_get_user_account(user.id, user.first_name, user.username)
+    text = (
+        f"🔐 **Giriş Bilgileriniz Hazır**\n\n"
+        f"👤 **Kullanıcı Adı:** `{acc['username']}`\n"
+        f"🔑 **Şifreniz:** `{acc['password']}`\n"
+        f"🆔 **Telegram ID:** `{user.id}`\n\n"
+        "🌐 **Web Kontrol Paneli:**\n"
+        "Aşağıdaki butona tıklayıp yukarıdaki kullanıcı adı ve şifrenizle giriş yapabilirsiniz 👇"
+    )
+    keyboard = [
+        [InlineKeyboardButton("🚀 Web Giriş Paneline Git", url=DASHBOARD_URL)]
+    ]
+    if update.callback_query:
+        await update.callback_query.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+    else:
+        await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -117,7 +147,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Kullanıcı işlemini veritabanına kaydet
     database.log_user_action(user.id, user.first_name, user.username, action="photo")
     
-    status = await message.reply_text("⏳ 1/2 Fotoğraf işleniyor: Trendyol standart beyaz stüdyo fonuna alınıyor...")
+    status = await message.reply_text("⏳ 1/3 Fotoğraf işleniyor: BirefNet ile saf beyaz stüdyo fonuna alınıyor...")
     
     try:
         file_obj = await photo.get_file(read_timeout=120)
@@ -138,9 +168,9 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # İlk satırdan ürün başlığını al
         product_short_desc = listing_text.split("\n")[0].replace("*", "").replace("#", "")
         
-        # 3. Gerçek Masayı Odaya Yerleştirme (Lifestyle Staging - Önceden ayrıştırılmış ürün ile anında)
-        await status.edit_text("⏳ 3/3 Masanız fotogerçekçi yaşam alanına / yemek odasına yerleştiriliyor...")
-        lifestyle_bytes = await asyncio.to_thread(generate_lifestyle_scene, product_cropped)
+        # 3. İkili Yapay Zeka (Dual-Agent) Mimari Yaşam Alanı Giydirme
+        await status.edit_text("⏳ 3/3 İç Mimar Yapay Zeka odanızı tasarlıyor ve masayı yerleştiriyor...")
+        lifestyle_bytes = await asyncio.to_thread(generate_lifestyle_scene, product_cropped, raw_bytes)
         
         # Ürünü admin paneli veritabanına kaydet
         database.record_product(user.id, user.first_name, product_short_desc, bool(lifestyle_bytes))
@@ -259,7 +289,13 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     
-    if query.data == "upload_to_trendyol":
+    if query.data == "btn_uyeol":
+        await uyeol_command(update, context)
+        return
+    elif query.data == "btn_giris":
+        await giris_command(update, context)
+        return
+    elif query.data == "upload_to_trendyol":
         await query.message.reply_text(
             "🎉 **[Test Onayı Başarılı]**\n"
             "Ürün bilgileri, stüdyo görselleri ve SEO etiketleri Trendyol API formatına dönüştürüldü ve mağaza yükleme kuyruğuna alındı!"
@@ -289,8 +325,9 @@ def main():
     
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).request(t_request).build()
     
-    app.add_handler(CommandHandler("start", start_command))
-    app.add_handler(CommandHandler(["hesap", "kayit"], account_command))
+    app.add_handler(CommandHandler(["start", "yardim"], start_command))
+    app.add_handler(CommandHandler(["uyeol", "kayit", "hesapac"], uyeol_command))
+    app.add_handler(CommandHandler(["giris", "hesabim", "sifrem"], giris_command))
     app.add_handler(CommandHandler("sorular", handle_questions))
     app.add_handler(CommandHandler("stok", handle_stock))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))

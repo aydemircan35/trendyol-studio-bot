@@ -178,11 +178,26 @@ def restart_bot_action():
 
 def save_ai_theme(theme_choice: str, custom_prompt: str):
     """Admin panelinden mekan temasını ve promptunu canlı günceller."""
+    mapping = {
+        "Kopenhag Sıcak İskandinav": "scandinavian",
+        "Milano Modernist Penthouse": "milano_modern",
+        "SoHo New York Loft": "soho_loft",
+        "Japandi / Wabi-Sabi Zen": "japandi_zen",
+        "Ege & Akdeniz Villa": "mediterranean_villa",
+        "Otomatik": ""
+    }
+    style_key = ""
+    for k, v in mapping.items():
+        if k in theme_choice:
+            style_key = v
+            break
+            
+    os.environ["LIFESTYLE_STYLE_KEY"] = style_key
     os.environ["LIFESTYLE_THEME"] = theme_choice
     if custom_prompt:
         os.environ["CUSTOM_LIFESTYLE_PROMPT"] = custom_prompt
-    log_message(f"🎨 Mekan stili güncellendi: {theme_choice}")
-    return f"✅ Mekan stili '{theme_choice}' olarak güncellendi! Yeni atılacak tüm fotoğraflar bu temada üretilecek."
+    log_message(f"🎨 Mimari mekan stili güncellendi: {theme_choice} ({style_key or 'AI Otomatik'})")
+    return f"✅ Mimari mekan stili '{theme_choice}' olarak güncellendi! Yeni çekimler bu koleksiyonda hazırlanacak."
 
 
 # ==========================================
@@ -194,9 +209,10 @@ ADMIN_PASS = os.getenv("ADMIN_PASSWORD", "trendyol123")
 
 
 def login_action(username, password):
-    if username == ADMIN_USER and password == ADMIN_PASS:
+    res = database.verify_login(username, password)
+    if res["success"]:
         dash_data = get_dashboard_data()
-        log_message(f"🔐 Yönetici girişi başarılı: {username}")
+        log_message(f"🔐 Giriş başarılı: {username} ({res.get('role', 'Satıcı')})")
         return (
             gr.update(visible=False), # login_box
             gr.update(visible=True),  # dashboard_box
@@ -208,7 +224,7 @@ def login_action(username, password):
         return (
             gr.update(visible=True),
             gr.update(visible=False),
-            "❌ **Hatalı kullanıcı adı veya şifre!** Lütfen bilgilerinizi kontrol ediniz.",
+            f"❌ **{res.get('error', 'Hatalı kullanıcı adı veya şifre!')}** Lütfen bilgilerinizi kontrol ediniz.",
             gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
         )
 
@@ -432,14 +448,16 @@ with gr.Blocks(title="Trendyol AI - Yönetici Kontrol Merkezi", theme=custom_the
                 gr.Markdown("Satıcılar fotoğraf attığında masanın etrafına hangi stilde oda giydirileceğini buradan yönetebilirsiniz:")
                 
                 theme_dropdown = gr.Dropdown(
-                    label="Hazır Mimari Temalar",
+                    label="Seçkin Mimari Katalog & Koleksiyonlar",
                     choices=[
-                        "İskandinav Aydınlık Yemek Odası (Doğal Gün Işığı, Meşe Parke)",
-                        "Lüks Modern Salon (Mermer Zemin, LED Aydınlatmalı TV Konsolu)",
-                        "Endüstriyel Loft (Tuğla Duvar, Geniş Fabrika Pencereleri)",
-                        "Ferah Ev-Ofis (Büyük Cam, Minimalist Çalışma Alanı, Bitkiler)"
+                        "Otomatik (İç Mimar Yapay Zeka Mobilyaya Göre Kendisi Tasarlasın)",
+                        "Kopenhag Sıcak İskandinav (Açık Meşe Balıksırtı Parke, Keten Dokular, Sabah Güneşi)",
+                        "Milano Modernist Penthouse (İtalyan Traverten Mermer Zemin, Panoramik Camlar, LED)",
+                        "SoHo New York Loft (Açık Tuğla Duvar, Siyah Çelik Fabrika Pencereleri)",
+                        "Japandi / Wabi-Sabi Zen Salon (Kavisli Kemerler, Bej Mikroçimento Zemin)",
+                        "Ege & Akdeniz Villa Terası (Traverten Taş Veranda, Zeytin Ağaçları, Altın Saat)"
                     ],
-                    value="İskandinav Aydınlık Yemek Odası (Doğal Gün Işığı, Meşe Parke)"
+                    value="Otomatik (İç Mimar Yapay Zeka Mobilyaya Göre Kendisi Tasarlasın)"
                 )
                 custom_prompt_box = gr.Textbox(
                     label="Özel Mimari İpuçları / İsteğe Bağlı Ekstra Prompt",
