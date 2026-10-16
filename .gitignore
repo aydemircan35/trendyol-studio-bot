@@ -9,3 +9,4 @@ temp/
 *.db
 test_*.png
 output_*.jpg
+assets/templates/

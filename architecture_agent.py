@@ -26,59 +26,56 @@ logger = logging.getLogger(__name__)
 
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 
+# Gömülü mimari şablonları kontrol et ve hazırla
+try:
+    from assets.embedded_templates import ensure_templates
+    ensure_templates()
+except Exception as e:
+    logger.warning(f"Gömülü şablonlar açılırken uyarı: {e}")
+
 # ==============================================================================
 # SEÇKİN MİMARİ STİL KATALOĞU (CURATED ARCHITECTURAL PRESETS)
 # ==============================================================================
 ARCHITECTURAL_CATALOG = {
     "scandinavian": {
         "title": "Kopenhag Sıcak İskandinav",
-        "description": "Açık meşe balıksırtı parke, keten dokular, doğal sabah güneşi, tavan pencereleri.",
-        "bg_prompt": (
-            "empty modern minimalist Scandinavian luxury dining room interior, "
-            "herringbone light oak wood floor, floor to ceiling windows, soft warm morning sunlight streaming in, "
-            "off-white lime plaster walls, unfurnished center floor space for table, 8k architectural digest photography"
-        ),
-        "seed": 108
+        "description": "Açık meşe balıksırtı parke, kemerli pencereler, doğal sabah güneşi.",
+        "template_file": os.path.join("assets", "templates", "scandinavian_oak.jpg"),
+        "ground_y": 810,
+        "tint": (235, 215, 190),
+        "scale": 0.58
     },
     "milano_modern": {
-        "title": "Milano Modernist Penthouse",
-        "description": "İtalyan mermer zemin, panoramik şehir manzaralı camlar, raylı LED aydınlatma.",
-        "bg_prompt": (
-            "empty luxury modern Milanese penthouse living room interior, "
-            "polished warm beige Italian travertine marble floor, panoramic glass walls, indirect warm architectural lighting, "
-            "minimalist contemporary luxury, empty center space for table, 8k interior design award winning"
-        ),
-        "seed": 242
+        "title": "Milano Traverten & Mermer Salon",
+        "description": "Cilalı traverten zemin, devasa kemerli vitrin camı, sıcak krem tonları.",
+        "template_file": os.path.join("assets", "templates", "milano_modern.jpg"),
+        "ground_y": 820,
+        "tint": (240, 225, 205),
+        "scale": 0.58
     },
     "soho_loft": {
         "title": "SoHo New York Endüstriyel Loft",
-        "description": "Açık tuğla duvarlar, döküm siyah çelik pencereler, ham beton & koyu ahşap.",
-        "bg_prompt": (
-            "empty luxury industrial New York loft interior, exposed light red brick wall, "
-            "large black steel frame factory windows, warm sun rays on dark reclaimed wood floor, "
-            "spacious unfurnished center area for furniture, architectural photography"
-        ),
-        "seed": 331
+        "description": "Açık tuğla duvarlar, döküm çelik pencereler, cilalı koyu zemin.",
+        "template_file": os.path.join("assets", "templates", "soho_loft.jpg"),
+        "ground_y": 825,
+        "tint": (205, 190, 175),
+        "scale": 0.58
     },
     "japandi_zen": {
         "title": "Japandi / Wabi-Sabi Zen Salon",
-        "description": "Ham ahşap detaylar, kireç sıvalı kemerler, ferah minimalist huzurlu atmosfer.",
-        "bg_prompt": (
-            "empty Japandi style wabi-sabi serene dining space, curved architectural archway, "
-            "textured beige microcement floor, natural soft diffused daylight, organic minimalism, "
-            "uncluttered empty room center, Architectural Digest cover quality"
-        ),
-        "seed": 415
+        "description": "Doğal açık tonlar, kireç sıva kemerler, huzurlu minimalist atmosfer.",
+        "template_file": os.path.join("assets", "templates", "milano_modern.jpg"),
+        "ground_y": 820,
+        "tint": (238, 222, 202),
+        "scale": 0.58
     },
     "mediterranean_villa": {
-        "title": "Ege & Akdeniz Villa Bahçe & Veranda",
-        "description": "Doğal taş teras, zeytin ağaçları, sıcak Akdeniz güneşi, ferah bahçe atmosferi.",
-        "bg_prompt": (
-            "empty sun-drenched Mediterranean luxury villa covered patio terrace, "
-            "light warm travertine stone floor, stone arch pillars framing sunny garden with olive trees, "
-            "bright golden hour light, empty center space for outdoor dining table, 8k villa photography"
-        ),
-        "seed": 520
+        "title": "Ege & Akdeniz Villa Salonu",
+        "description": "Doğal taş ve sıcak Akdeniz güneşiyle aydınlanan ferah salon.",
+        "template_file": os.path.join("assets", "templates", "scandinavian_oak.jpg"),
+        "ground_y": 810,
+        "tint": (235, 215, 190),
+        "scale": 0.58
     }
 }
 
@@ -89,7 +86,7 @@ ARCHITECTURAL_CATALOG = {
 def agent_1_analyze_furniture_and_plan_room(image_bytes: bytes) -> dict:
     """
     Gemini 2.5 Flash ile mobilyanın özelliklerini (renk, doku, malzeme, tarz) analiz eder
-    ve bu ürüne %100 uyumlu lüks bir mimari mekan promptu ve stil önerisi üretir.
+    ve bu ürüne %100 uyumlu lüks bir mimari mekan önerisi üretir.
     """
     b64_img = base64.b64encode(image_bytes).decode("utf-8")
     
@@ -104,7 +101,6 @@ Lütfen görseli incele ve aşağıdaki JSON formatında yanıt ver:
   "dominant_color": "Siyah füme / Doğal ceviz / Beyaz mermer vb.",
   "material_look": "Temperli cam, masif ahşap, metal ayak vb.",
   "recommended_style": "scandinavian" | "milano_modern" | "soho_loft" | "japandi_zen" | "mediterranean_villa",
-  "room_prompt": "empty modern ... (İngilizce, yüksek kaliteli, fotogerçekçi, odanın tam merkezinde mobilyanın konulacağı boş zemin alanı olan mimari mekan promptu)",
   "lighting_tone": "warm_morning" | "golden_hour" | "bright_neutral"
 }
 SADECE saf JSON formatında yanıt ver, markdown ```json tagi olmadan.
@@ -139,7 +135,6 @@ SADECE saf JSON formatında yanıt ver, markdown ```json tagi olmadan.
         resp = requests.post(url, headers=headers, json=payload, timeout=25)
         if resp.status_code == 200:
             content = resp.json()["choices"][0]["message"]["content"].strip()
-            # Temizle
             if content.startswith("```json"):
                 content = content[7:]
             if content.endswith("```"):
@@ -150,13 +145,11 @@ SADECE saf JSON formatında yanıt ver, markdown ```json tagi olmadan.
     except Exception as e:
         logger.warning(f"Ajan 1 analiz hatası: {e}. Varsayılan İskandinav stiline dönülüyor.")
 
-    # Yedek varsayılan plan
     return {
         "product_type": "Lüks Mobilya",
         "dominant_color": "Doğal",
         "material_look": "Premium",
         "recommended_style": "scandinavian",
-        "room_prompt": ARCHITECTURAL_CATALOG["scandinavian"]["bg_prompt"],
         "lighting_tone": "warm_morning"
     }
 
@@ -164,112 +157,83 @@ SADECE saf JSON formatında yanıt ver, markdown ```json tagi olmadan.
 # ==============================================================================
 # AJAN 2: FOTOGERÇEKÇİ STAGING & MEKAN ENTEGRASYON MOTORU
 # ==============================================================================
-def create_dual_layer_shadow(product_cropped: Image.Image) -> Image.Image:
+def agent_2_stage_product(product_cropped: Image.Image, vision_plan: dict = None, style_override: str = None) -> Image.Image:
     """
-    Gerçek mobilyanın altına çift katmanlı gölge üretir:
-    1. Koyu ve sert temas gölgesi (bacakların bastığı nokta)
-    2. Işığın geldiği yöne doğru yayılan yumuşak difüzyon gölgesi
+    Ajan 1'in mimari planına ve seçilen lüks oda şablonuna göre:
+    - Gerçek mobilyanın tablası, ayakları ve dokusunu %100 korur.
+    - Odanın zemin perspektifine tam basmasını sağlar (asla havada kalmaz veya ayakları kesilmez).
+    - Yumuşak ortam gölgesi + sıkı temas gölgesi giydirir (kutulanma/sınır çizgisi olmadan).
+    - Mekanın Kelvin ışık rengiyle mobilyanın tonunu harmanlar.
     """
-    w, h = product_cropped.size
-    alpha = product_cropped.split()[-1]
+    if vision_plan is None:
+        vision_plan = {}
 
-    # Temel siluet
-    shadow_raw = Image.new("RGBA", (w, h), (15, 15, 20, 0))
-    shadow_raw.putalpha(alpha)
-
-    # 1. Katman: Sert Temas Gölgesi (Contact shadow - doğrudan bacak tabanında)
-    contact = shadow_raw.resize((w, max(6, int(h * 0.08))), Image.Resampling.LANCZOS)
-    contact = contact.filter(ImageFilter.GaussianBlur(4))
-    r, g, b, a1 = contact.split()
-    a1 = a1.point(lambda p: int(p * 0.70))
-    contact.putalpha(a1)
-
-    # 2. Katman: Yumuşak Ortam Gölgesi (Ambient soft shadow - arkaya/yere doğru uzayan)
-    diffuse = shadow_raw.resize((w, max(12, int(h * 0.22))), Image.Resampling.LANCZOS)
-    diffuse = diffuse.filter(ImageFilter.GaussianBlur(22))
-    r, g, b, a2 = diffuse.split()
-    a2 = a2.point(lambda p: int(p * 0.38))
-    diffuse.putalpha(a2)
-
-    # Tuvale birleştir
-    shadow_canvas = Image.new("RGBA", (w, h + int(h * 0.15)), (0, 0, 0, 0))
-    # Bacak tabanı hizasına (en alt noktaya) yerleştir
-    base_y = int(h * 0.95)
-    shadow_canvas.paste(diffuse, (0, base_y - 4), diffuse)
-    shadow_canvas.paste(contact, (0, base_y), contact)
-
-    return shadow_canvas
-
-
-def fetch_room_background(prompt: str, seed: int = 108) -> Image.Image:
-    """
-    Pollinations / Flux üzerinden yüksek çözünürlüklü mimari mekan çeker ve filigranı temizler.
-    """
-    clean_p = requests.utils.quote(prompt)
-    url = f"https://image.pollinations.ai/prompt/{clean_p}?width=1200&height=900&model=flux&nologo=true&seed={seed}"
-    try:
-        resp = requests.get(url, timeout=25)
-        if resp.status_code == 200 and len(resp.content) > 2000:
-            raw_room = Image.open(BytesIO(resp.content)).convert("RGBA")
-            rw, rh = raw_room.size
-            # Alt köşedeki minik filigran alanını temizlemek için alt 34 pikseli kırpıp orantılar
-            cleaned_room = raw_room.crop((0, 0, rw, rh - 34)).resize((rw, rh), Image.Resampling.LANCZOS)
-            return cleaned_room
-    except Exception as e:
-        logger.warning(f"Oda arka planı çekilemedi ({e}), yedek stüdyo oluşturuluyor.")
-
-    # Nötr sıcak bej stüdyo zemini
-    bg = Image.new("RGBA", (1200, 900), (242, 240, 236, 255))
-    return bg
-
-
-def agent_2_stage_product(product_cropped: Image.Image, vision_plan: dict, style_override: str = None) -> Image.Image:
-    """
-    Ajan 1'in mimari planına göre odayı hazırlar ve gerçek mobilyayı
-    %100 dokusunu koruyarak odaya giydirir.
-    """
-    # 1. Hedef stil ve prompt seçimi
     style_key = style_override or vision_plan.get("recommended_style", "scandinavian")
     preset = ARCHITECTURAL_CATALOG.get(style_key, ARCHITECTURAL_CATALOG["scandinavian"])
     
-    room_prompt = vision_plan.get("room_prompt") or preset["bg_prompt"]
-    seed = preset.get("seed", 108)
+    # 1. Kalibre Edilmiş Yüksek Çözünürlüklü Şablonu Yükle
+    template_path = preset.get("template_file")
+    if template_path and os.path.exists(template_path):
+        room_bg = Image.open(template_path).convert("RGBA")
+    else:
+        # Yedek nötr stüdyo
+        room_bg = Image.new("RGBA", (1200, 900), (242, 240, 236, 255))
 
-    # 2. Odayı yükle (filigransız)
-    room_bg = fetch_room_background(room_prompt, seed=seed)
     bg_w, bg_h = room_bg.size
 
-    # 3. Masayı oda zeminine oturtacak perspektif oranı (Genişlik %56)
+    # 2. Mobilyayı orantıla
     bbox = product_cropped.getbbox()
     if bbox:
         product_cropped = product_cropped.crop(bbox)
         
     pw, ph = product_cropped.size
-    new_w = int(bg_w * 0.56)
+    scale_pct = preset.get("scale", 0.58)
+    new_w = int(bg_w * scale_pct)
     scale = new_w / pw
     new_h = int(ph * scale)
     
     scaled_product = product_cropped.resize((new_w, new_h), Image.Resampling.LANCZOS)
 
-    # 4. Ayaklar parke/zemin üzerinde (zeminden 65 piksel yukarıda tam oturur)
+    # 3. Ayakların tam zemine oturması (zemin perspektif çizgisi)
+    target_ground_y = preset.get("ground_y", 815)
     pos_x = (bg_w - new_w) // 2
-    pos_y = bg_h - new_h - 65
+    pos_y = target_ground_y - new_h
 
-    # 5. Çift Katmanlı Doğal Gölge Motoru
+    # 4. Kusursuz Çift Katmanlı Gölge (Kutulanma yapmayan geniş marjinli tuval)
     from PIL import ImageDraw
-    diffuse_shadow = Image.new("RGBA", (int(new_w * 1.15), int(new_h * 0.22)), (0, 0, 0, 0))
-    d = ImageDraw.Draw(diffuse_shadow)
-    d.ellipse([(0, 0), (int(new_w * 1.15), int(new_h * 0.22))], fill=(15, 15, 20, 150))
-    diffuse_shadow = diffuse_shadow.filter(ImageFilter.GaussianBlur(18))
+    pad = 100
+    ao_w = int(new_w * 1.08)
+    ao_h = int(new_h * 0.22)
+    canvas_w = ao_w + 2 * pad
+    canvas_h = ao_h + 2 * pad
 
-    contact_shadow = Image.new("RGBA", (new_w, int(new_h * 0.08)), (10, 10, 15, 0))
-    c_alpha = scaled_product.split()[-1].resize((new_w, int(new_h * 0.08)))
-    contact_shadow.putalpha(c_alpha)
-    contact_shadow = contact_shadow.filter(ImageFilter.GaussianBlur(3))
+    # Katman 1: Yumuşak Ortam Gölgesi (Ambient Occlusion)
+    shadow_img = Image.new("RGBA", (canvas_w, canvas_h), (0, 0, 0, 0))
+    d_ao = ImageDraw.Draw(shadow_img)
+    d_ao.ellipse([(pad, pad), (pad + ao_w, pad + ao_h)], fill=(20, 18, 16, 95))
+    shadow_img = shadow_img.filter(ImageFilter.GaussianBlur(28))
 
-    # 6. Sırayla yapıştır: Difüzyon gölgesi -> Sert temas gölgesi -> Gerçek mobilya
-    room_bg.paste(diffuse_shadow, (pos_x - int(new_w * 0.075), pos_y + new_h - int(new_h * 0.11)), diffuse_shadow)
-    room_bg.paste(contact_shadow, (pos_x, pos_y + new_h - int(new_h * 0.04)), contact_shadow)
-    room_bg.paste(scaled_product, (pos_x, pos_y), scaled_product)
+    # Katman 2: Sıkı Ayak Temas Gölgesi (Contact Shadow)
+    contact_pad = 50
+    cw = new_w + 2 * contact_pad
+    ch = int(new_h * 0.12) + 2 * contact_pad
+    contact_img = Image.new("RGBA", (cw, ch), (0, 0, 0, 0))
+    d_c = ImageDraw.Draw(contact_img)
+    d_c.ellipse([(contact_pad, contact_pad), (contact_pad + new_w, contact_pad + int(new_h * 0.08))], fill=(10, 10, 10, 150))
+    contact_img = contact_img.filter(ImageFilter.GaussianBlur(8))
+
+    # Gölgeleri odaya yerleştir
+    room_bg.paste(shadow_img, (pos_x + (new_w - ao_w) // 2 - pad, target_ground_y - int(ao_h * 0.55) - pad), shadow_img)
+    room_bg.paste(contact_img, (pos_x - contact_pad, target_ground_y - int(new_h * 0.05) - contact_pad), contact_img)
+
+    # 5. Mekan Işığı Renk Uyumu (Kelvin Harmonization)
+    tint_color = preset.get("tint", (235, 215, 190))
+    tint_layer = Image.new("RGB", (new_w, new_h), tint_color)
+    rgb_prod = scaled_product.convert("RGB")
+    harmonized = Image.blend(rgb_prod, tint_layer, 0.035).convert("RGBA")
+    harmonized.putalpha(scaled_product.split()[-1])
+
+    # 6. Mobilyayı odaya yerleştir
+    room_bg.paste(harmonized, (pos_x, pos_y), harmonized)
 
     return room_bg.convert("RGB")

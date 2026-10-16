@@ -53,6 +53,23 @@ def extract_product(input_image_bytes: bytes) -> Image.Image:
     product_rgba = rembg.remove(optimized_bytes, session=session)
     product_img = Image.open(BytesIO(product_rgba)).convert("RGBA")
     
+    # Gürültü ve kopuk parçacık temizliği
+    try:
+        import numpy as np
+        import scipy.ndimage as ndi
+        alpha_np = np.array(product_img.split()[-1])
+        binary = alpha_np > 25
+        labeled, num_features = ndi.label(binary)
+        if num_features > 1:
+            sizes = ndi.sum(binary, labeled, range(num_features + 1))
+            # 60 pikselden küçük kopuk parçacıkları (toz, izole çizgi) temizle
+            for idx, size in enumerate(sizes):
+                if size < 60:
+                    alpha_np[labeled == idx] = 0
+            product_img.putalpha(Image.fromarray(alpha_np))
+    except Exception as e:
+        logger.warning(f"Maske gürültü temizleme hatası: {e}")
+
     # Sınırları bul ve kırp
     bbox = product_img.getbbox()
     if bbox:
@@ -66,76 +83,43 @@ def extract_product(input_image_bytes: bytes) -> Image.Image:
 def create_realistic_shadow(product_cropped: Image.Image) -> Image.Image:
     """
     Masanın bacaklarının ve gövdesinin altına parkeye/halıya düşen
-    gerçekçi yumuşak bir temas gölgesi (ambient contact shadow) üretir.
+    gerçekçi çift katmanlı yumuşak bir temas gölgesi (ambient contact shadow) üretir.
+    Kutulanma/kırpılma olmaması için geniş marjinli tuval kullanır.
     """
+    from PIL import ImageDraw
     w, h = product_cropped.size
-    alpha = product_cropped.split()[-1]
     
-    # Siyah siluet gölge katmanı
-    shadow = Image.new("RGBA", (w, h), (20, 20, 25, 0))
-    shadow.putalpha(alpha)
+    pad = 80
+    ao_w = int(w * 1.05)
+    ao_h = int(h * 0.16)
     
-    # Yer gölgesi perspektifi: dikeyde basıklaştır
-    shadow_flat = shadow.resize((w, max(10, int(h * 0.18))), Image.Resampling.LANCZOS)
+    canvas_w = ao_w + 2 * pad
+    canvas_h = ao_h + 2 * pad
     
-    canvas = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-    # Masanın alt bacak tabanına hizala
-    canvas.paste(shadow_flat, (0, int(h * 0.85)), shadow_flat)
-    canvas = canvas.filter(ImageFilter.GaussianBlur(16))
+    shadow_img = Image.new("RGBA", (canvas_w, canvas_h), (0, 0, 0, 0))
+    d = ImageDraw.Draw(shadow_img)
     
-    # Opaklık ayarla
-    r, g, b, a = canvas.split()
-    a = a.point(lambda p: int(p * 0.50))
-    canvas.putalpha(a)
-    return canvas
+    # 1. Geniş ve yumuşak zemin gölgesi
+    d.ellipse([(pad, pad), (pad + ao_w, pad + ao_h)], fill=(15, 15, 18, 80))
+    shadow_img = shadow_img.filter(ImageFilter.GaussianBlur(22))
+    
+    # 2. Sıkı temas gölgesi
+    contact_img = Image.new("RGBA", (canvas_w, canvas_h), (0, 0, 0, 0))
+    d_c = ImageDraw.Draw(contact_img)
+    d_c.ellipse([(pad + int(w * 0.05), pad + int(ao_h * 0.3)), (pad + int(w * 1.0), pad + int(ao_h * 0.75))], fill=(10, 10, 10, 140))
+    contact_img = contact_img.filter(ImageFilter.GaussianBlur(7))
+    
+    # Birleştir
+    shadow_img.paste(contact_img, (0, 0), contact_img)
+    return shadow_img
 
 
 def compose_product_into_room(product_cropped: Image.Image) -> Image.Image:
     """
-    Satıcının gerçek masasını, fotogerçekçi bir İskandinav yemek odası/salon ortamına
-    kusursuz ışık, zemin ve perspektif uyumu ile entegre eder.
+    Yedek mimari staging motoru (architecture_agent'a yönlendirir).
     """
-    room_url = (
-        "https://image.pollinations.ai/prompt/"
-        "empty%20modern%20bright%20Scandinavian%20dining%20room%20interior%2C%20floor%20to%20ceiling%20windows%2C%20warm%20morning%20sunlight%2C%20light%20oak%20wood%20parquet%20floor%2C%20minimalist%20beige%20wall%2C%20unfurnished%20center%20space%20for%20furniture%2C%208k%20architectural%20photography%2C%20photorealistic"
-        "?width=1200&height=900&model=flux&nologo=true&seed=105"
-    )
-
-    try:
-        resp = requests.get(room_url, timeout=25)
-        if resp.status_code == 200 and len(resp.content) > 1000:
-            room_bg = Image.open(BytesIO(resp.content)).convert("RGBA")
-        else:
-            room_bg = Image.new("RGBA", (1200, 900), (245, 245, 247, 255))
-    except Exception as e:
-        logger.warning(f"Oda arka planı alınamadı, nötr stüdyo kullanılıyor: {e}")
-        room_bg = Image.new("RGBA", (1200, 900), (245, 245, 247, 255))
-
-    bg_w, bg_h = room_bg.size
-
-    # 2. Masayı oda perspektifine orantıla (Genişlik en fazla %65, yükseklik en fazla %45)
-    pw, ph = product_cropped.size
-    max_pw = int(bg_w * 0.65)
-    max_ph = int(bg_h * 0.45)
-    scale = min(max_pw / pw, max_ph / ph)
-    new_w = max(10, int(pw * scale))
-    new_h = max(10, int(ph * scale))
-    
-    scaled_product = product_cropped.resize((new_w, new_h), Image.Resampling.LANCZOS)
-    
-    # 3. Masanın gerçekçi gölgesini üret
-    shadow_layer = create_realistic_shadow(scaled_product)
-    
-    # 4. Masayı odanın zeminine / odak noktasına konumlandır (zeminden %10 pay)
-    pos_x = (bg_w - new_w) // 2
-    pos_y = bg_h - new_h - int(bg_h * 0.10)
-    
-    # Odaya önce gölgeyi yapıştır
-    room_bg.paste(shadow_layer, (pos_x, pos_y), shadow_layer)
-    # Üzerine gerçek masayı yapıştır (masanın dokusu, bacakları, tablası %100 korunur)
-    room_bg.paste(scaled_product, (pos_x, pos_y), scaled_product)
-    
-    return room_bg.convert("RGB")
+    import architecture_agent
+    return architecture_agent.agent_2_stage_product(product_cropped, {})
 
 
 def process_product_image(
@@ -149,7 +133,7 @@ def process_product_image(
 
     # Ürünü tuvalin %80'ini dolduracak şekilde orantılı büyüt/küçült
     max_w = int(target_width * 0.82)
-    max_h = int(target_height * 0.82)
+    max_h = int(target_height * 0.75)
     scale = min(max_w / pw, max_h / ph)
     new_w = max(10, int(pw * scale))
     new_h = max(10, int(ph * scale))
@@ -157,12 +141,20 @@ def process_product_image(
     scaled_product = product_cropped.resize((new_w, new_h), Image.Resampling.LANCZOS)
 
     background = Image.new("RGBA", (target_width, target_height), (255, 255, 255, 255))
-    x = (target_width - new_w) // 2
-    y = (target_height - new_h) // 2 + int(target_height * 0.03)
+    pos_x = (target_width - new_w) // 2
+    pos_y = (target_height - new_h) // 2 + int(target_height * 0.04)
 
+    # Gölgelendirme
+    pad = 80
     shadow = create_realistic_shadow(scaled_product)
-    background.paste(shadow, (x, y + 5), shadow)
-    background.paste(scaled_product, (x, y), scaled_product)
+    sw, sh = shadow.size
+    
+    # Gölgeyi masanın ayak tabanı hizasına yerleştir
+    shadow_x = pos_x + (new_w - (sw - 2 * pad)) // 2 - pad
+    shadow_y = pos_y + new_h - int((sh - 2 * pad) * 0.55) - pad
+    
+    background.paste(shadow, (shadow_x, shadow_y), shadow)
+    background.paste(scaled_product, (pos_x, pos_y), scaled_product)
     return background.convert("RGB"), product_cropped
 
 
