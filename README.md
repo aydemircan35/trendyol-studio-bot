@@ -1,3 +1,14 @@
+---
+title: Trendyol AI Studio Bot
+emoji: 🛍️
+colorFrom: orange
+colorTo: red
+sdk: gradio
+sdk_version: 5.20.0
+app_file: app.py
+pinned: false
+---
+
 # 🛍️ Trendyol AI Studio & Listing Bot
 
 > **Transform amateur product photos into professional Trendyol studio listings in seconds via Telegram.**
