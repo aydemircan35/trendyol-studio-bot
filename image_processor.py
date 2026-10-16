@@ -19,7 +19,8 @@ _session = None
 def get_session():
     global _session
     if _session is None:
-        _session = rembg.new_session("u2net")
+        # GPU arayıp donmaması için doğrudan CPUExecutionProvider kilitlenir
+        _session = rembg.new_session("u2net", providers=["CPUExecutionProvider"])
     return _session
 
 

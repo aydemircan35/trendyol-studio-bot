@@ -37,7 +37,7 @@ from support_agent import generate_customer_support_answer
 from trendyol_api import TrendyolClient
 
 load_dotenv()
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN") or "8782557761:AAEwMpGpk1tx0DG8bm6P6TGEJTJbPqXs-WU"
 
 # Trendyol API Kimlikleri (Varsa gerçek mağazaya bağlanır, yoksa otomatik Simülasyon/Test moduna geçer)
 SUPPLIER_ID = os.getenv("TRENDYOL_SUPPLIER_ID", "")
