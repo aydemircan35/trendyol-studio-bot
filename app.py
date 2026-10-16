@@ -1,7 +1,7 @@
 """
 app.py
 Trendyol AI Manager - 7/24 Bulut Admin Paneli ve Bot Yönetim Merkezi.
-Hugging Face Spaces üzerinde çalışır. Bilgisayar bağımlılığı yoktur.
+Hugging Face ZeroGPU Uyumlu.
 """
 
 import os
@@ -10,9 +10,15 @@ import threading
 import time
 import datetime
 import gradio as gr
+import spaces
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# ZeroGPU kontrol mekanizması için zorunlu dekoratör
+@spaces.GPU
+def check_gpu():
+    return "GPU OK"
 
 # Arka plan bot thread kontrolü
 bot_thread = None
@@ -52,7 +58,7 @@ if not is_bot_running:
 
 def get_system_status():
     status = "🟢 ÇALIŞIYOR (7/24 Canlı)" if is_bot_running else "🔴 DURDURULDU"
-    logs_text = "\n".join(bot_logs[-20:]) if bot_logs else "Henüz bir işlem kaydı yok..."
+    logs_text = "\n".join(bot_logs[-20:]) if bot_logs else "Sistem aktif, mesaj bekleniyor..."
     return status, logs_text
 
 
@@ -65,16 +71,7 @@ def save_settings(openrouter_key: str):
     return "⚠️ Değişiklik yapılmadı."
 
 
-# ==========================================
-# MODERN GRADIO ADMİN ARAYÜZÜ
-# ==========================================
-
-custom_css = """
-.admin-card { background: #1e1e2d; border-radius: 12px; padding: 20px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); }
-.metric-box { text-align: center; font-size: 24px; font-weight: bold; color: #f27a1a; }
-"""
-
-with gr.Blocks(title="Trendyol AI Manager - Admin Paneli", css=custom_css, theme=gr.themes.Soft()) as demo:
+with gr.Blocks(title="Trendyol AI Manager - Admin Paneli", theme=gr.themes.Soft()) as demo:
     gr.Markdown("# 🛍️ **Trendyol AI Mağaza Yöneticisi - Bulut Admin Paneli**")
     gr.Markdown("Bu panel 7/24 internette çalışır. Bilgisayarınızı kapatsanız dahi bot aktiftir.")
     
@@ -84,28 +81,17 @@ with gr.Blocks(title="Trendyol AI Manager - Admin Paneli", css=custom_css, theme
             refresh_btn = gr.Button("🔄 Durumu ve Logları Yenile")
         with gr.Column(scale=2):
             gr.Markdown("### 📱 **Telegram Bot Bilgisi**")
-            gr.Markdown("Bot Kullanıcı Adı: **[@Trendyol_studio_mehmetbot](https://t.me/Trendyol_studio_mehmetbot)**")
-            gr.Markdown("Durum: **Simülasyon & Gerçek Mağaza Destekli**")
+            gr.Markdown("Bot: **[@Trendyol_studio_mehmetbot](https://t.me/Trendyol_studio_mehmetbot)**")
 
     gr.Markdown("---")
-    
     with gr.Tabs():
         with gr.TabItem("📊 Canlı İstatistikler & Kullanıcılar"):
-            with gr.Row():
-                with gr.Column():
-                    gr.Markdown("#### 📈 Kullanım Özeti")
-                    gr.Markdown("- **Desteklenen Platform:** Trendyol (Partner API)")
-                    gr.Markdown("- **Görsel Motoru:** FLUX AI Lifestyle + u2net Studio")
-                    gr.Markdown("- **SEO & Destek Motoru:** Gemini 2.5 Flash (OpenRouter)")
-                with gr.Column():
-                    gr.Markdown("#### 👥 Son Aktif Kullanıcılar")
-                    gr.Markdown("Telegram üzerinden bota erişen satıcılar otomatik kayıt altına alınır.")
-
+            gr.Markdown("#### 📈 Kullanım Özeti")
+            gr.Markdown("- **Görsel Motoru:** FLUX AI Lifestyle + u2net Studio")
+            gr.Markdown("- **SEO & Destek Motoru:** Gemini 2.5 Flash (OpenRouter)")
         with gr.TabItem("📝 Canlı Konsol Logları"):
-            log_display = gr.Textbox(label="Sistem & Telegram İşlem Kayıtları", lines=12, interactive=False, value="Sistem başlatıldı, dinleniyor...")
-
+            log_display = gr.Textbox(label="İşlem Kayıtları", lines=10, interactive=False, value="Sistem başlatıldı, dinleniyor...")
         with gr.TabItem("⚙️ Canlı Ayarlar (Botu Kapatmadan)"):
-            gr.Markdown("Buradan yapacağınız değişiklikler **botu yeniden başlatmaya gerek kalmadan** anında geçerli olur.")
             api_key_input = gr.Textbox(label="OpenRouter API Key", type="password", value=os.getenv("OPENROUTER_API_KEY", ""))
             save_btn = gr.Button("💾 Ayarları Kaydet", variant="primary")
             save_msg = gr.Markdown()
@@ -114,4 +100,4 @@ with gr.Blocks(title="Trendyol AI Manager - Admin Paneli", css=custom_css, theme
     refresh_btn.click(get_system_status, outputs=[bot_status, log_display])
 
 if __name__ == "__main__":
-    demo.launch(server_name="0.0.0.0", server_port=7860)
+    demo.launch(server_name="0.0.0.0", server_port=7860, ssr=False)
