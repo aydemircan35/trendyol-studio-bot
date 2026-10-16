@@ -350,25 +350,20 @@ with gr.Blocks(title="Trendyol AI - Yönetici Kontrol Merkezi", theme=custom_the
             </div>
             """)
             with gr.Tabs():
-                with gr.TabItem("🔐 Yönetici Girişi"):
+                with gr.TabItem("🔐 Sisteme Giriş"):
                     login_username = gr.Textbox(
-                        label="Kullanıcı Adı",
-                        placeholder="Yönetici adınızı girin (varsayılan: admin)",
+                        label="Kullanıcı Adı veya Telegram ID",
+                        placeholder="Kullanıcı adınızı girin...",
                         value=""
                     )
                     login_password = gr.Textbox(
                         label="Şifre",
                         type="password",
-                        placeholder="Şifrenizi girin (varsayılan: trendyol123)",
+                        placeholder="Şifrenizi girin...",
                         value=""
                     )
                     login_btn = gr.Button("🚀 Sisteme Giriş Yap", variant="primary", size="lg")
                     login_error = gr.Markdown()
-                    gr.HTML("""
-                    <div style="text-align: center; margin-top: 15px; font-size: 12px; color: #94A3B8;">
-                        🔒 Yönetici: <code>admin</code> / <code>trendyol123</code>
-                    </div>
-                    """)
 
                 with gr.TabItem("📝 Yeni Satıcı Hesabı Aç"):
                     gr.Markdown("Yeni satıcı mısınız? Bilgilerinizi girerek anında hesabınızı oluşturun:")
