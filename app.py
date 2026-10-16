@@ -79,20 +79,21 @@ def get_dashboard_data():
     # Kullanıcılar tablosu formatı
     user_rows = []
     for u in stats["recent_users"]:
-        # u: (user_id, first_name, username, role, status, store_name, total_photos, last_active)
+        # u: (user_id, first_name, username, password, role, status, store_name, total_photos, last_active)
         user_rows.append([
             str(u[0]),
             u[1] or "İsimsiz",
             f"@{u[2]}" if u[2] else "-",
-            u[5] or "-",
-            u[3] or "Satıcı",
-            u[4] or "Aktif",
-            str(u[6]),
-            str(u[7])[:19] if u[7] else "-"
+            u[3] or "-",
+            u[6] or "-",
+            u[4] or "Satıcı",
+            u[5] or "Aktif",
+            str(u[7]),
+            str(u[8])[:19] if u[8] else "-"
         ])
     
     if not user_rows:
-        user_rows = [["-", "Henüz kayıtlı kullanıcı yok", "-", "-", "-", "-", "0", "-"]]
+        user_rows = [["-", "Henüz kayıtlı kullanıcı yok", "-", "-", "-", "-", "-", "0", "-"]]
 
     # Ürünler tablosu formatı
     prod_rows = []
@@ -124,7 +125,7 @@ def get_dashboard_data():
     )
 
 
-def add_user_action(uid_str, uname, fname, store, role, status):
+def add_user_action(uid_str, uname, fname, store, role, status, passw=""):
     import random
     if not uid_str or not uid_str.strip():
         user_id = random.randint(100000000, 999999999)
@@ -134,11 +135,11 @@ def add_user_action(uid_str, uname, fname, store, role, status):
         except ValueError:
             return "⚠️ Telegram ID sadece rakamlardan oluşmalıdır!", gr.update(), gr.update()
     
-    database.add_or_update_user(user_id, fname or "Yeni Satıcı", uname or "", role, status, store or "")
-    log_message(f"👤 Yeni satıcı/hesap kaydedildi: {fname} (ID: {user_id}, Rol: {role}, Durum: {status})")
+    final_pass = database.add_or_update_user(user_id, fname or "Yeni Satıcı", uname or "", role, status, store or "", password=passw if passw else None)
+    log_message(f"👤 Yeni satıcı/hesap kaydedildi: {fname} (ID: {user_id}, Rol: {role}, Şifre: {final_pass})")
     
     res = get_dashboard_data()
-    return f"✅ Hesap başarıyla oluşturuldu! (ID: {user_id})", res[3], res[0]
+    return f"✅ Hesap başarıyla oluşturuldu! Kullanıcı: {uname or user_id} | Şifre: {final_pass}", res[3], res[0]
 
 
 def delete_user_action(uid_str):
@@ -238,22 +239,31 @@ def logout_action():
     )
 
 
-def public_register_action(fname, sname, tg_user):
-    import random
+def auto_fill_action(fname):
+    creds = database.generate_easy_credentials(first_name=fname)
+    return creds["username"], creds["password"]
+
+
+def public_register_action(fname, sname, uname, passw):
     if not fname or not fname.strip():
         return "⚠️ Lütfen Ad Soyad alanını doldurunuz."
     if not sname or not sname.strip():
         return "⚠️ Lütfen Mağaza / Firma Adınızı doldurunuz."
     
-    clean_tg = (tg_user or "").strip().lstrip("@")
-    user_id = random.randint(100000000, 999999999)
-    database.add_or_update_user(user_id, fname.strip(), clean_tg, role="Satıcı", status="Aktif", store_name=sname.strip())
-    log_message(f"🎉 Yeni satıcı portaldan kaydını açtı: {fname} ({sname})")
+    res = database.register_web_user(
+        first_name=fname.strip(),
+        store_name=sname.strip(),
+        username=uname.strip() if uname and uname.strip() else None,
+        password=passw.strip() if passw and passw.strip() else None
+    )
+    log_message(f"🎉 Yeni satıcı portaldan kaydını açtı: {fname} (Kullanıcı: {res['username']}, Şifre: {res['password']})")
     
     return (
-        f"🎉 **Tebrikler {fname}!**\n\n"
-        f"**{sname}** mağazanız için satıcı hesabınız başarıyla oluşturuldu.\n\n"
-        "👉 Şimdi Telegram uygulamasından **[@Trendyol_studio_mehmetbot](https://t.me/Trendyol_studio_mehmetbot)** botuna geçerek ürün fotoğraflarınızı gönderebilir, saf beyaz fon ve mimari yaşam alanı katalog çekimlerinizi anında alabilirsiniz!"
+        f"🎉 **Tebrikler {fname}! Satıcı Hesabınız Başarıyla Açıldı.**\n\n"
+        f"👤 **Kullanıcı Adınız:** `{res['username']}`\n"
+        f"🔑 **Giriş Şifreniz:** `{res['password']}`\n"
+        f"🏪 **Mağaza:** `{res['store_name']}`\n\n"
+        "👉 Şimdi yukarıdaki **'🔐 Sisteme Giriş'** sekmesine geçerek bu bilgilerinizle hemen giriş yapabilir veya Telegram'da **[@Trendyol_studio_mehmetbot](https://t.me/Trendyol_studio_mehmetbot)** botuna ürün fotoğraflarınızı gönderebilirsiniz!"
     )
 
 
@@ -366,11 +376,16 @@ with gr.Blocks(title="Trendyol AI - Yönetici Kontrol Merkezi", theme=custom_the
                     login_error = gr.Markdown()
 
                 with gr.TabItem("📝 Yeni Satıcı Hesabı Aç"):
-                    gr.Markdown("Yeni satıcı mısınız? Bilgilerinizi girerek anında hesabınızı oluşturun:")
-                    reg_fname = gr.Textbox(label="Ad Soyad", placeholder="Örn: Mehmet Yılmaz")
-                    reg_store = gr.Textbox(label="Mağaza / Firma Adı", placeholder="Örn: Trend Ahşap Mobilya")
-                    reg_tg = gr.Textbox(label="Telegram Kullanıcı Adınız", placeholder="Örn: @mehmet_35 (veya telefon/kullanıcı adı)")
-                    reg_btn = gr.Button("✨ Satıcı Hesabımı Aç", variant="primary", size="lg")
+                    gr.Markdown("Kendi belirleyeceğiniz kolay bilgilerle veya **🎲 Otomatik Kolay Belirle** butonu ile anında hesabınızı oluşturun:")
+                    with gr.Row():
+                        reg_fname = gr.Textbox(label="Ad Soyad", placeholder="Örn: Mehmet Yılmaz")
+                        reg_store = gr.Textbox(label="Mağaza / Firma Adı", placeholder="Örn: Trend Ahşap Mobilya")
+                    with gr.Row():
+                        reg_uname = gr.Textbox(label="Kullanıcı Adı", placeholder="İstediğiniz kullanıcı adı (veya otomatik üretin)")
+                        reg_pass = gr.Textbox(label="Kolay Şifre", placeholder="İstediğiniz kolay şifre (veya otomatik üretin)")
+                    with gr.Row():
+                        auto_btn = gr.Button("🎲 Otomatik Kolay Belirle", variant="secondary")
+                        reg_btn = gr.Button("✨ Satıcı Hesabımı Aç", variant="primary", size="lg")
                     reg_msg = gr.Markdown()
 
     # ----------------------------------------------------
@@ -403,8 +418,9 @@ with gr.Blocks(title="Trendyol AI - Yönetici Kontrol Merkezi", theme=custom_the
                 gr.Markdown("### ➕ Yeni Satıcı / Ekip Hesabı Açma Arayüzü")
                 with gr.Group():
                     with gr.Row():
-                        in_uid = gr.Textbox(label="Telegram Kullanıcı ID (Bilinmiyorsa boş bırakılabilir)", placeholder="Örn: 987654321")
-                        in_uname = gr.Textbox(label="Telegram Kullanıcı Adı", placeholder="@satici_adi")
+                        in_uid = gr.Textbox(label="Telegram Kullanıcı ID (Boş bırakılabilir)", placeholder="Örn: 987654321")
+                        in_uname = gr.Textbox(label="Kullanıcı Adı", placeholder="mehmet")
+                        in_pass = gr.Textbox(label="Kolay Şifre", placeholder="1234")
                         in_fname = gr.Textbox(label="Ad Soyad", placeholder="Ahmet Yılmaz")
                         in_store = gr.Textbox(label="Mağaza / Firma Adı", placeholder="Trend Ahşap Ltd.")
                     with gr.Row():
@@ -415,10 +431,10 @@ with gr.Blocks(title="Trendyol AI - Yönetici Kontrol Merkezi", theme=custom_the
                 user_action_msg = gr.Markdown()
 
                 gr.Markdown("---")
-                gr.Markdown("### 📋 Kayıtlı Satıcılar & Hesap Yetki Listesi")
+                gr.Markdown("### 📋 Kayıtlı Satıcılar & Kolay Şifre Listesi")
                 user_table = gr.Dataframe(
-                    headers=["Kullanıcı ID", "Ad Soyad", "Telegram", "Mağaza Adı", "Rol", "Durum", "İşlenen Görsel", "Son İşlem"],
-                    datatype=["str", "str", "str", "str", "str", "str", "str", "str"],
+                    headers=["Kullanıcı ID", "Ad Soyad", "Kullanıcı Adı", "Şifre", "Mağaza Adı", "Rol", "Durum", "İşlenen Görsel", "Son İşlem"],
+                    datatype=["str", "str", "str", "str", "str", "str", "str", "str", "str"],
                     interactive=False
                 )
                 
@@ -491,7 +507,7 @@ with gr.Blocks(title="Trendyol AI - Yönetici Kontrol Merkezi", theme=custom_the
         # Kullanıcı İşlem Butonları Olayları
         create_acc_btn.click(
             add_user_action,
-            inputs=[in_uid, in_uname, in_fname, in_store, in_role, in_status],
+            inputs=[in_uid, in_uname, in_fname, in_store, in_role, in_status, in_pass],
             outputs=[user_action_msg, user_table, metric_users]
         )
         btn_activate.click(
@@ -533,9 +549,14 @@ with gr.Blocks(title="Trendyol AI - Yönetici Kontrol Merkezi", theme=custom_the
         logout_action,
         outputs=[login_box, dashboard_box, login_username, login_password, login_error]
     )
+    auto_btn.click(
+        auto_fill_action,
+        inputs=[reg_fname],
+        outputs=[reg_uname, reg_pass]
+    )
     reg_btn.click(
         public_register_action,
-        inputs=[reg_fname, reg_store, reg_tg],
+        inputs=[reg_fname, reg_store, reg_uname, reg_pass],
         outputs=[reg_msg]
     )
 

@@ -93,23 +93,119 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def uyeol_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Otomatik kullanıcı adı ve şifreyle üye olma akışı."""
+    """Otomatik veya özel kullanıcı adı/şifreyle üye olma akışı."""
     user = update.effective_user
-    acc = database.create_or_get_user_account(user.id, user.first_name, user.username)
+    args = context.args or []
+    
+    custom_u = None
+    custom_p = None
+    if len(args) == 1:
+        # Tek parametre girilmişse şifre olarak kabul et
+        custom_p = args[0]
+    elif len(args) >= 2:
+        custom_u = args[0]
+        custom_p = args[1]
+        
+    acc = database.create_or_get_user_account(
+        user.id, user.first_name, user.username,
+        custom_password=custom_p, custom_username=custom_u
+    )
+    
     text = (
-        f"🎉 **Tebrikler {user.first_name}! Üyeliğiniz Otomatik Oluşturuldu.**\n\n"
-        "Sisteme giriş yapabilmeniz için bilgileriniz tanımlandı:\n\n"
+        f"🎉 **Tebrikler {user.first_name}! Hesabınız Hazır.**\n\n"
+        "Web kontrol merkezine giriş bilgileriniz:\n\n"
         f"👤 **Kullanıcı Adı:** `{acc['username']}`\n"
-        f"🔑 **Otomatik Şifreniz:** `{acc['password']}`\n"
-        f"🆔 **Telegram ID:** `{user.id}`\n"
-        "📌 **Hesap Durumu:** 🟢 Aktif Satıcı\n\n"
-        "🌐 **Web Portalı Girişi:**\n"
-        "Aşağıdaki butona tıklayarak web kontrol merkezine bu bilgilerinizle giriş yapabilirsiniz.\n\n"
-        "📸 **Hemen Kullanmaya Başlayın:**\n"
-        "Doğrudan bu sohbete ürün fotoğrafı göndererek anında beyaz fon ve mimari yaşam alanı çekimi alabilirsiniz!"
+        f"🔑 **Şifreniz:** `{acc['password']}`\n"
+        f"🆔 **Telegram ID:** `{user.id}`\n\n"
+        "💡 **İpucu (Kolayca Kendiniz Belirleyin):**\n"
+        "• Kendi şifrenizi belirlemek için: `/sifre 1234`\n"
+        "• Kendi kullanıcı adınızı belirlemek için: `/kullanici adiniz`\n"
+        "• Yeni bir kolay şifre istemek için: `/otomatik`\n\n"
+        "🌐 Aşağıdaki butondan doğrudan portala giriş yapabilirsiniz 👇"
     )
     keyboard = [
-        [InlineKeyboardButton("🚀 Web Kontrol Paneline Giriş Yap", url=DASHBOARD_URL)]
+        [InlineKeyboardButton("🚀 Web Kontrol Paneline Giriş Yap", url=DASHBOARD_URL)],
+        [
+            InlineKeyboardButton("🎲 Yeni Kolay Şifre Üret", callback_data="btn_regen_easy"),
+            InlineKeyboardButton("🔑 Şifremi Göster", callback_data="btn_giris")
+        ]
+    ]
+    if update.callback_query:
+        await update.callback_query.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+    else:
+        await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+
+async def sifre_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Kullanıcının kendi şifresini kolayca belirlemesini sağlar."""
+    user = update.effective_user
+    args = context.args
+    if not args:
+        await update.message.reply_text(
+            "⚠️ **Lütfen belirlemek istediğiniz şifreyi yazın.**\n"
+            "Örnek: `/sifre 1234` veya `/sifre 123456`",
+            parse_mode="Markdown"
+        )
+        return
+        
+    new_pass = args[0].strip()
+    res = database.update_user_credentials(user.id, new_password=new_pass)
+    if not res.get("success"):
+        # Kullanıcı yoksa oluştur
+        acc = database.create_or_get_user_account(user.id, user.first_name, user.username, custom_password=new_pass)
+        res = {"username": acc["username"], "password": acc["password"]}
+        
+    await update.message.reply_text(
+        f"✅ **Şifreniz Başarıyla Güncellendi!**\n\n"
+        f"👤 **Kullanıcı Adınız:** `{res.get('username')}`\n"
+        f"🔑 **Yeni Şifreniz:** `{new_pass}`\n\n"
+        f"Artık [Web Kontrol Merkezi]({DASHBOARD_URL})'ne bu kolay şifrenizle giriş yapabilirsiniz.",
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🚀 Web Paneline Git", url=DASHBOARD_URL)]]),
+        parse_mode="Markdown"
+    )
+
+
+async def kullanici_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Kullanıcının kendi kullanıcı adını belirlemesini sağlar."""
+    user = update.effective_user
+    args = context.args
+    if not args:
+        await update.message.reply_text(
+            "⚠️ **Lütfen belirlemek istediğiniz kullanıcı adını yazın.**\n"
+            "Örnek: `/kullanici mehmet` veya `/kullanici trend_mobilya`",
+            parse_mode="Markdown"
+        )
+        return
+        
+    new_uname = args[0].strip().lstrip("@")
+    res = database.update_user_credentials(user.id, new_username=new_uname)
+    if not res.get("success"):
+        acc = database.create_or_get_user_account(user.id, user.first_name, new_uname)
+        res = {"username": acc["username"], "password": acc["password"]}
+        
+    await update.message.reply_text(
+        f"✅ **Kullanıcı Adınız Başarıyla Güncellendi!**\n\n"
+        f"👤 **Yeni Kullanıcı Adınız:** `{new_uname}`\n"
+        f"🔑 **Şifreniz:** `{res.get('password')}`\n\n"
+        f"Web paneline bu kullanıcı adınızla giriş yapabilirsiniz.",
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🚀 Web Paneline Git", url=DASHBOARD_URL)]]),
+        parse_mode="Markdown"
+    )
+
+
+async def otomatik_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Sistemin anında yeni bir kolay kullanıcı adı ve 4 haneli PIN şifre üretmesi."""
+    user = update.effective_user
+    acc = database.create_or_get_user_account(user.id, user.first_name, user.username, force_regenerate=True)
+    text = (
+        f"🎲 **Yeni Kolay Giriş Bilgileriniz Üretildi:**\n\n"
+        f"👤 **Kullanıcı Adı:** `{acc['username']}`\n"
+        f"🔑 **Kolay Şifre:** `{acc['password']}`\n"
+        f"🆔 **Telegram ID:** `{user.id}`\n\n"
+        f"İsterseniz `/sifre 1234` yazarak şifrenizi değiştirebilirsiniz."
+    )
+    keyboard = [
+        [InlineKeyboardButton("🚀 Web Giriş Paneline Git", url=DASHBOARD_URL)]
     ]
     if update.callback_query:
         await update.callback_query.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
@@ -126,11 +222,15 @@ async def giris_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"👤 **Kullanıcı Adı:** `{acc['username']}`\n"
         f"🔑 **Şifreniz:** `{acc['password']}`\n"
         f"🆔 **Telegram ID:** `{user.id}`\n\n"
-        "🌐 **Web Kontrol Paneli:**\n"
-        "Aşağıdaki butona tıklayıp yukarıdaki kullanıcı adı ve şifrenizle giriş yapabilirsiniz 👇"
+        "💡 **Kolayca Değiştirmek İsterseniz:**\n"
+        "• `/sifre <yeni_sifre>`\n"
+        "• `/kullanici <yeni_ad>`\n"
+        "• `/otomatik` (Rastgele kolay üret)\n\n"
+        "🌐 Aşağıdaki butondan doğrudan giriş yapabilirsiniz 👇"
     )
     keyboard = [
-        [InlineKeyboardButton("🚀 Web Giriş Paneline Git", url=DASHBOARD_URL)]
+        [InlineKeyboardButton("🚀 Web Giriş Paneline Git", url=DASHBOARD_URL)],
+        [InlineKeyboardButton("🎲 Yeni Kolay Şifre Al", callback_data="btn_regen_easy")]
     ]
     if update.callback_query:
         await update.callback_query.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
@@ -295,6 +395,9 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif query.data == "btn_giris":
         await giris_command(update, context)
         return
+    elif query.data == "btn_regen_easy":
+        await otomatik_command(update, context)
+        return
     elif query.data == "upload_to_trendyol":
         await query.message.reply_text(
             "🎉 **[Test Onayı Başarılı]**\n"
@@ -327,7 +430,10 @@ def main():
     
     app.add_handler(CommandHandler(["start", "yardim"], start_command))
     app.add_handler(CommandHandler(["uyeol", "kayit", "hesapac"], uyeol_command))
-    app.add_handler(CommandHandler(["giris", "hesabim", "sifrem"], giris_command))
+    app.add_handler(CommandHandler(["giris", "hesabim"], giris_command))
+    app.add_handler(CommandHandler(["sifre", "sifrem", "sifrebelirle"], sifre_command))
+    app.add_handler(CommandHandler(["kullanici", "kullaniciadi"], kullanici_command))
+    app.add_handler(CommandHandler(["otomatik", "kolay"], otomatik_command))
     app.add_handler(CommandHandler("sorular", handle_questions))
     app.add_handler(CommandHandler("stok", handle_stock))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
