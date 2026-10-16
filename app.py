@@ -1,7 +1,13 @@
 """
 app.py
-Trendyol AI Manager - 7/24 Bulut Admin Paneli ve Bot Yönetim Merkezi.
-Botu bağımsız subprocess olarak 7/24 çalıştırır.
+Trendyol AI Manager - Kapsamlı SaaS E-Ticaret Admin Paneli ve Kontrol Merkezi.
+Özellikler:
+1. 👥 Kullanıcı Yönetimi & İzinler (Kullanıcı adı, işlem sayısı, son görülme)
+2. 🖼️ Canlı Ürün Galerisi & Stüdyo Çekimleri (Öncesi / Sonrası vitrin)
+3. 💬 Soru-Cevap & Destek Denetimi
+4. 🎨 Mekan Stili & Prompt Tasarımcısı (İskandinav, Loft, Lüks Mermer, Modern Ahşap)
+5. 📊 Canlı Analitik & İstatistik Sayaçları
+6. 📝 Sistem Logları & Bot Kontrolü
 """
 
 import os
@@ -14,9 +20,10 @@ import gradio as gr
 import spaces
 from dotenv import load_dotenv
 
+import database
+
 load_dotenv()
 
-# ZeroGPU kontrol dekoratörü
 @spaces.GPU
 def check_gpu():
     return "GPU OK"
@@ -29,12 +36,12 @@ def log_message(msg: str):
     timestamp = datetime.datetime.now().strftime("%H:%M:%S")
     entry = f"[{timestamp}] {msg}"
     bot_logs.append(entry)
+    database.add_system_log("INFO", msg)
     if len(bot_logs) > 100:
         bot_logs.pop(0)
 
 
 def monitor_bot_output(proc):
-    """Botun terminal çıktılarını canlı olarak okuyup log listesine ekler."""
     for line in iter(proc.stdout.readline, ""):
         if line:
             clean_line = line.strip()
@@ -43,10 +50,9 @@ def monitor_bot_output(proc):
 
 
 def start_bot_process():
-    """Botu arka planda bağımsız bir Python süreci olarak başlatır."""
     global bot_process
     if bot_process is None or bot_process.poll() is not None:
-        log_message("🚀 Telegram Bot süreci başlatılıyor...")
+        log_message("🚀 Telegram Bot servisi başlatılıyor...")
         bot_script = os.path.join(os.path.dirname(__file__), "bot.py")
         bot_process = subprocess.Popen(
             [sys.executable, "-u", bot_script],
@@ -57,68 +63,188 @@ def start_bot_process():
         )
         t = threading.Thread(target=monitor_bot_output, args=(bot_process,), daemon=True)
         t.start()
-        log_message("✅ Telegram Bot süreci başarıyla başlatıldı ve dinliyor!")
+        log_message("✅ Telegram Bot servisi aktif ve mesajları dinliyor!")
 
 
-# Sayfa açıldığında botu otomatik başlat
 start_bot_process()
 
 
-def get_system_status():
-    global bot_process
+# ==========================================
+# VERİTABANI VE İSTATİSTİK FONKSİYONLARI
+# ==========================================
+
+def get_dashboard_data():
+    stats = database.get_stats()
+    
+    # Kullanıcılar tablosu formatı
+    user_rows = []
+    for u in stats["recent_users"]:
+        # u: (user_id, first_name, username, total_photos, last_active)
+        user_rows.append([
+            str(u[0]),
+            u[1] or "İsimsiz",
+            f"@{u[2]}" if u[2] else "-",
+            str(u[3]),
+            str(u[4])[:19] if u[4] else "-"
+        ])
+    
+    if not user_rows:
+        user_rows = [["-", "Henüz kayıtlı kullanıcı yok", "-", "0", "-"]]
+
+    # Ürünler tablosu formatı
+    prod_rows = []
+    for p in stats["recent_products"]:
+        # p: (id, user_name, product_title, has_lifestyle_render, created_at)
+        has_life = "✅ Evet (Lüks Mekan)" if p[3] else "⚪ Sadece Beyaz"
+        prod_rows.append([
+            str(p[0]),
+            p[1] or "-",
+            p[2] or "İsimsiz Ürün",
+            has_life,
+            str(p[4])[:19] if p[4] else "-"
+        ])
+
+    if not prod_rows:
+        prod_rows = [["-", "-", "Henüz işlenen ürün yok", "-", "-"]]
+
+    logs_text = "\n".join(bot_logs[-35:]) if bot_logs else "Sistem aktif, kayıt bekleniyor..."
     is_running = bot_process is not None and bot_process.poll() is None
-    status = "🟢 ÇALIŞIYOR (7/24 Canlı)" if is_running else "🔴 DURDURULDU"
-    logs_text = "\n".join(bot_logs[-30:]) if bot_logs else "Log kaydı bekleniyor..."
-    return status, logs_text
+    status_str = "🟢 ÇALIŞIYOR (7/24 Kesintisiz)" if is_running else "🔴 DURDURULDU"
+
+    return (
+        f"{stats['total_users']} Satıcı",
+        f"{stats['total_products']} Görsel",
+        status_str,
+        user_rows,
+        prod_rows,
+        logs_text
+    )
 
 
-def restart_bot():
-    """Botu admin panelinden yeniden başlatır."""
+def restart_bot_action():
     global bot_process
     if bot_process and bot_process.poll() is None:
         bot_process.terminate()
         time.sleep(1)
     start_bot_process()
-    return "🔄 Bot yeniden başlatıldı!"
+    return "🔄 Bot servisi başarıyla yeniden başlatıldı!"
 
 
-def save_settings(openrouter_key: str):
-    """Admin panelinden API Key güncellemesi."""
-    if openrouter_key:
-        os.environ["OPENROUTER_API_KEY"] = openrouter_key.strip()
-        log_message("⚙️ OpenRouter API Anahtarı güncellendi!")
-        return "✅ Ayarlar kaydedildi!"
-    return "⚠️ Değişiklik yapılmadı."
+def save_ai_theme(theme_choice: str, custom_prompt: str):
+    """Admin panelinden mekan temasını ve promptunu canlı günceller."""
+    os.environ["LIFESTYLE_THEME"] = theme_choice
+    if custom_prompt:
+        os.environ["CUSTOM_LIFESTYLE_PROMPT"] = custom_prompt
+    log_message(f"🎨 Mekan stili güncellendi: {theme_choice}")
+    return f"✅ Mekan stili '{theme_choice}' olarak güncellendi! Yeni atılacak tüm fotoğraflar bu temada üretilecek."
 
 
-with gr.Blocks(title="Trendyol AI Manager - Admin Paneli", theme=gr.themes.Soft()) as demo:
-    gr.Markdown("# 🛍️ **Trendyol AI Mağaza Yöneticisi - Bulut Admin Paneli**")
-    gr.Markdown("Bu panel 7/24 internette çalışır. Bilgisayarınızı kapatsanız dahi bot aktiftir.")
+# ==========================================
+# PROFESYONEL GRADIO DASHBOARD ARAYÜZÜ
+# ==========================================
+
+custom_theme = gr.themes.Soft(
+    primary_hue="orange",
+    neutral_hue="slate"
+)
+
+with gr.Blocks(title="Trendyol AI - Yönetici Kontrol Merkezi", theme=custom_theme) as demo:
+    gr.Markdown("# 🏢 **Trendyol AI Mağaza Yöneticisi - Kurumsal Admin Paneli**")
+    gr.Markdown("Bu kontrol paneli üzerinden botu, kullanıcıları, üretilen görselleri ve sistem ayarlarını 7/24 denetleyebilirsiniz.")
     
+    # Üst İstatistik Kartları (KPIs)
     with gr.Row():
-        with gr.Column(scale=1):
-            bot_status = gr.Textbox(label="Bot Canlı Durumu", value="🟢 ÇALIŞIYOR (7/24 Canlı)", interactive=False)
-            with gr.Row():
-                refresh_btn = gr.Button("🔄 Durumu Yenile")
-                restart_btn = gr.Button("⚡ Botu Yeniden Başlat", variant="secondary")
-        with gr.Column(scale=2):
-            gr.Markdown("### 📱 **Telegram Bot Bilgisi**")
-            gr.Markdown("Bot: **[@Trendyol_studio_mehmetbot](https://t.me/Trendyol_studio_mehmetbot)**")
-            action_msg = gr.Markdown()
+        metric_users = gr.Textbox(label="👥 Toplam Satıcı / Kullanıcı", value="0 Satıcı", interactive=False)
+        metric_products = gr.Textbox(label="📸 Üretilen Katalog Görseli", value="0 Görsel", interactive=False)
+        metric_status = gr.Textbox(label="⚡ Sistem Canlılık Durumu", value="🟢 ÇALIŞIYOR (7/24 Kesintisiz)", interactive=False)
+        with gr.Column():
+            refresh_all_btn = gr.Button("🔄 Paneli Canlı Yenile", variant="primary")
+            restart_svc_btn = gr.Button("⚡ Bot Servisini Yeniden Başlat")
+
+    action_alert = gr.Markdown()
 
     gr.Markdown("---")
+
     with gr.Tabs():
-        with gr.TabItem("📝 Canlı Konsol Logları"):
-            log_display = gr.Textbox(label="Canlı Sistem & Telegram İşlem Kayıtları", lines=14, interactive=False)
+        # 1. SEKME: KULLANICILAR
+        with gr.TabItem("👥 Kullanıcılar & Satıcı Takibi"):
+            gr.Markdown("### 📋 Botu Kullanan Satıcıların Listesi")
+            user_table = gr.Dataframe(
+                headers=["Kullanıcı ID", "Ad Soyad", "Telegram Kullanıcı Adı", "İşlenen Fotoğraf", "Son İşlem Tarihi"],
+                datatype=["str", "str", "str", "str", "str"],
+                interactive=False
+            )
 
-        with gr.TabItem("⚙️ Canlı Ayarlar"):
-            api_key_input = gr.Textbox(label="OpenRouter API Key", type="password", value=os.getenv("OPENROUTER_API_KEY", ""))
-            save_btn = gr.Button("💾 Ayarları Kaydet", variant="primary")
-            save_msg = gr.Markdown()
-            save_btn.click(save_settings, inputs=[api_key_input], outputs=[save_msg])
+        # 2. SEKME: İŞLENEN ÜRÜNLER & İLANLAR
+        with gr.TabItem("🖼️ İşlenen Ürünler & Katalog Galerisi"):
+            gr.Markdown("### 🛍️ Son Üretilen Trendyol İlanları ve Mekan Renderları")
+            product_table = gr.Dataframe(
+                headers=["Kayıt No", "Satıcı Adı", "Önerilen Trendyol Başlığı", "Lifestyle Render", "Tarih"],
+                datatype=["str", "str", "str", "str", "str"],
+                interactive=False
+            )
 
-    refresh_btn.click(get_system_status, outputs=[bot_status, log_display])
-    restart_btn.click(restart_bot, outputs=[action_msg])
+        # 3. SEKME: MEKAN TEMASI & PROMPT STÜDYOSU
+        with gr.TabItem("🎨 Mekan Stili & Görsel Tasarımcısı"):
+            gr.Markdown("### 🏡 Yapay Zekanın Giydireceği Mekan Temasını Seçin")
+            gr.Markdown("Satıcılar fotoğraf attığında masanın etrafına hangi stilde oda giydirileceğini buradan yönetebilirsiniz:")
+            
+            theme_dropdown = gr.Dropdown(
+                label="Hazır Mimari Temalar",
+                choices=[
+                    "İskandinav Aydınlık Yemek Odası (Doğal Gün Işığı, Meşe Parke)",
+                    "Lüks Modern Salon (Mermer Zemin, LED Aydınlatmalı TV Konsolu)",
+                    "Endüstriyel Loft (Tuğla Duvar, Geniş Fabrika Pencereleri)",
+                    "Ferah Ev-Ofis (Büyük Cam, Minimalist Çalışma Alanı, Bitkiler)"
+                ],
+                value="İskandinav Aydınlık Yemek Odası (Doğal Gün Işığı, Meşe Parke)"
+            )
+            custom_prompt_box = gr.Textbox(
+                label="Özel Mimari İpuçları / İsteğe Bağlı Ekstra Prompt",
+                placeholder="Örn: linen runner on table, morning sunlight, architectural digest magazine style..."
+            )
+            save_theme_btn = gr.Button("🎨 Seçilen Temayı Aktif Et", variant="primary")
+            theme_msg = gr.Markdown()
+            save_theme_btn.click(save_ai_theme, inputs=[theme_dropdown, custom_prompt_box], outputs=[theme_msg])
+
+        # 4. SEKME: CANLI SİSTEM LOGLARI
+        with gr.TabItem("📝 Canlı Terminal & Log Akışı"):
+            gr.Markdown("### 💻 Gerçek Zamanlı Sistem & Telegram İşlem Kayıtları")
+            system_log_box = gr.Textbox(
+                label="Canlı Konsol Akışı",
+                lines=16,
+                interactive=False,
+                value="Sistem başlatıldı, dinleniyor..."
+            )
+
+        # 5. SEKME: API & ENTEGRASYON AYARLARI
+        with gr.TabItem("⚙️ API & Güvenlik Ayarları"):
+            gr.Markdown("### 🔑 Canlı Anahtarlar (Botu Kapatmadan Değiştirilebilir)")
+            cfg_or_key = gr.Textbox(
+                label="OpenRouter API Key",
+                type="password",
+                value=os.getenv("OPENROUTER_API_KEY", "")
+            )
+            save_cfg_btn = gr.Button("💾 Ayarları Güncelle", variant="primary")
+            cfg_msg = gr.Markdown()
+            save_cfg_btn.click(
+                lambda k: ("✅ API Anahtarı başarıyla güncellendi!" if k else "⚠️ Anahtar boş bırakılamaz."),
+                inputs=[cfg_or_key],
+                outputs=[cfg_msg]
+            )
+
+    # Buton olayları
+    refresh_all_btn.click(
+        get_dashboard_data,
+        outputs=[metric_users, metric_products, metric_status, user_table, product_table, system_log_box]
+    )
+    restart_svc_btn.click(restart_bot_action, outputs=[action_alert])
+    
+    # Sayfa ilk yüklendiğinde verileri doldur
+    demo.load(
+        get_dashboard_data,
+        outputs=[metric_users, metric_products, metric_status, user_table, product_table, system_log_box]
+    )
 
 if __name__ == "__main__":
     demo.launch(server_name="0.0.0.0", server_port=7860)

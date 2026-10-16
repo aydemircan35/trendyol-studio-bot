@@ -35,6 +35,7 @@ from image_processor import process_product_image, generate_lifestyle_scene
 from seo_generator import generate_trendyol_listing
 from support_agent import generate_customer_support_answer
 from trendyol_api import TrendyolClient
+import database
 
 load_dotenv()
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN") or "8782557761:AAEwMpGpk1tx0DG8bm6P6TGEJTJbPqXs-WU"
@@ -81,6 +82,10 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Ürün fotoğrafını stüdyo görseline çevirip ilan üretir."""
     message = update.message
     photo = message.photo[-1]
+    user = update.effective_user
+    
+    # Kullanıcı işlemini veritabanına kaydet
+    database.log_user_action(user.id, user.first_name, user.username, action="photo")
     
     status = await message.reply_text("⏳ 1/2 Fotoğraf işleniyor: Trendyol standart beyaz stüdyo fonuna alınıyor...")
     
@@ -106,6 +111,9 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # 3. Gerçek Masayı Odaya Yerleştirme (Lifestyle Staging)
         await status.edit_text("⏳ 3/3 Masanız fotogerçekçi yaşam alanına / yemek odasına yerleştiriliyor...")
         lifestyle_bytes = await asyncio.to_thread(generate_lifestyle_scene, raw_bytes)
+        
+        # Ürünü admin paneli veritabanına kaydet
+        database.record_product(user.id, user.first_name, product_short_desc, bool(lifestyle_bytes))
         
         await status.delete()
         
